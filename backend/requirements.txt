@@ -1,0 +1,29 @@
+# ── Web framework ──────────────────────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+python-multipart==0.0.9          # required by FastAPI for file uploads
+
+# ── Config / env ───────────────────────────────────────────────
+pydantic==2.10.3
+pydantic-settings==2.11.0
+
+# ── Database (async) ───────────────────────────────────────────
+sqlalchemy==2.0.35
+asyncpg==0.29.0                  # async PostgreSQL driver
+psycopg2-binary==2.9.9           # sync fallback (used by some tooling)
+
+# ── RAG pipeline ───────────────────────────────────────────────
+# Pin the top-level langchain packages and let pip resolve a compatible
+# langchain-core across the whole family (avoids the 0.x vs 1.x split).
+langchain==1.3.13
+langchain-chroma==1.1.0
+langchain-community==0.4.2       # PyPDFLoader + other community integrations
+langchain-huggingface==1.2.2     # for embeddings
+langchain-ollama==1.1.0          # local LLM via Ollama (1.x matches our langchain-core)
+sentence-transformers==3.3.1     # local embedding model (all-MiniLM-L6-v2)
+pypdf==5.0.1                     # version dictated by langchain-chroma (>=1.3.5)
+
+# ── Testing ────────────────────────────────────────────────────
+pytest==8.3.3
+pytest-asyncio==0.24.0
+httpx==0.27.2                    # async client for testing FastAPI
