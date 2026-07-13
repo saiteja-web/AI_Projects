@@ -15,7 +15,7 @@ from app.core.config import settings
 from app.core.database import Base, engine
 # Import models so SQLAlchemy registers them with Base.metadata before create_all
 from app.models import db_models  # noqa: F401
-from app.routers import chat, history, upload
+from app.routers import chat, history, models, upload
 
 
 @asynccontextmanager
@@ -38,6 +38,7 @@ app.add_middleware(
 )
 
 # Register routers
+app.include_router(models.router)
 app.include_router(history.router)
 app.include_router(upload.router)
 app.include_router(chat.router)

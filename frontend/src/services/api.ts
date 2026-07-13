@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { UploadResponse,ChatHistory,ChatRequest,ChatResponse } from '../types';
+import type { UploadResponse,ChatHistory,ChatRequest,ChatResponse, ModelsResponse } from '../types';
 
 
 // Base URL for backend API
@@ -24,16 +24,29 @@ export async function uploadPDF(file:File): Promise<UploadResponse>{
 
 }
 // send a chat message
-export async function sendChatMessage(sessionId: string, query: string): Promise<ChatResponse> {
+export async function sendChatMessage(
+    sessionId: string,
+    query: string,
+    provider?: string,
+    modelId?: string
+): Promise<ChatResponse> {
     const response = await api.post<ChatResponse>('/api/chat', {
         session_id: sessionId,
         query,
+        provider,
+        model_id: modelId,
     });
     return response.data;
 }
 // Get chat history for a session
 export async function getChatHistory(sessionId: string): Promise<ChatHistory> {
     const response = await api.get<ChatHistory>(`/api/history/${sessionId}`);
+    return response.data;
+}
+
+// Get available LLM models
+export async function fetchModels(): Promise<ModelsResponse> {
+    const response = await api.get<ModelsResponse>('/models/');
     return response.data;
 }
 

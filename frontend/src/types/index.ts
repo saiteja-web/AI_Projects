@@ -29,6 +29,32 @@ interface ChatResponse {
 interface ChatRequest {
     session_id: string;
     query: string;
+    provider?: string;
+    model_id?: string;
 }
 
-export type { Message, ChatHistory, ChatResponse, UploadResponse, ChatRequest };
+// LLM Model info
+interface ModelInfo {
+    id: string;
+    name: string;
+    context_tokens?: number;
+    description: string;
+}
+
+// Provider info with models
+interface ProviderInfo {
+    name: string;
+    models: ModelInfo[];
+}
+
+// Response from GET /models/
+interface ModelsResponse {
+    providers: {
+        ollama: ProviderInfo;
+        openai: ProviderInfo;
+    };
+    default_provider: string;
+    default_model: string;
+}
+
+export type { Message, ChatHistory, ChatResponse, UploadResponse, ChatRequest, ModelInfo, ProviderInfo, ModelsResponse };

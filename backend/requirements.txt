@@ -20,6 +20,7 @@ langchain-chroma==1.1.0
 langchain-community==0.4.2       # PyPDFLoader + other community integrations
 langchain-huggingface==1.2.2     # for embeddings
 langchain-ollama==1.1.0          # local LLM via Ollama (1.x matches our langchain-core)
+langchain-openai==1.0.0          # OpenAI GPT models
 sentence-transformers==3.3.1     # local embedding model (all-MiniLM-L6-v2)
 pypdf==5.0.1                     # version dictated by langchain-chroma (>=1.3.5)
 

@@ -8,8 +8,9 @@ Two stages:
   INDEXING : PDF -> chunks -> embeddings -> ChromaDB  (build_rag_chain)
   QUERYING : question -> embed -> top-k chunks -> LLM -> answer (query_rag_chain)
 
-Uses a local embedding model (all-MiniLM-L6-v2) and a local Ollama LLM,
-so the stack is 100% free and runs entirely in Docker — no external API keys.
+Supports multiple LLM providers via llm_factory:
+- Ollama: Local models (llama3.2, mistral, codellama, etc.)
+- OpenAI: GPT-4, GPT-3.5-turbo, etc.
 """
 import os
 from typing import Any
@@ -21,34 +22,36 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.runnables import RunnablePassthrough
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_ollama import ChatOllama
 
 from app.core.config import settings
+from app.services.llm_factory import create_llm, get_default_model
 
 # Where ChromaDB persists its vector index (mounted volume in docker-compose)
 CHROMA_DIR = os.environ.get("CHROMA_DIR", "/app/chroma_db")
 
 # In-memory registry of active retrieval chains, keyed by session_id.
-rag_chains: dict[str, Any] = {}
+# Each entry is a dict mapping (provider, model_id) -> (chain, retriever)
+rag_chains: dict[str, dict[tuple[str, str], tuple[Any, Any]]] = {}
 
-def _llm() -> ChatOllama:
-    """Local LLM using the Ollama container."""
-    return ChatOllama(
-        base_url=settings.ollama_base_url,
-        model=settings.ollama_model,
-        temperature=0.3,
-    )
+def _llm(provider: str = "ollama", model_id: str = "llama3.2"):
+    """Create an LLM instance using the factory."""
+    return create_llm(provider, model_id, temperature=0.3)
 
 def _embeddings() -> HuggingFaceEmbeddings:
     """The local embedding model (downloads ~80MB on first use, then cached)."""
     return HuggingFaceEmbeddings(model_name=settings.embedding_model)
 
 
-def _build_chain(vectordb: Chroma) -> Any:
+def _build_chain(vectordb: Chroma, provider: str = "ollama", model_id: str = "llama3.2") -> Any:
     """Build an LCEL retrieval chain over a Chroma vector store.
 
     LCEL pipe composition:
       {context, question} -> prompt -> llm -> string parser
+
+    Args:
+        vectordb: The Chroma vector store
+        provider: LLM provider ("ollama" or "openai")
+        model_id: Model identifier
     """
     retriever = vectordb.as_retriever(search_kwargs={"k": 3})
 
@@ -66,15 +69,26 @@ def _build_chain(vectordb: Chroma) -> Any:
     chain = (
         {"context": retriever | format_docs, "question": RunnablePassthrough()}
         | prompt
-        | _llm()
+        | _llm(provider, model_id)
         | StrOutputParser()
     )
     return chain, retriever
 
 
-def build_rag_chain(file_path: str, session_id: str):
+def build_rag_chain(
+    file_path: str,
+    session_id: str,
+    provider: str = "ollama",
+    model_id: str = "llama3.2"
+):
     """INDEXING stage: load a PDF, chunk it, embed it, store in ChromaDB,
     and build a retrieval chain ready to answer questions.
+
+    Args:
+        file_path: Path to the PDF file
+        session_id: Unique session identifier
+        provider: LLM provider ("ollama" or "openai")
+        model_id: Model identifier
     """
     # 1. Load PDF (one Document per page, with page metadata)
     loader = PyPDFLoader(file_path)
@@ -94,17 +108,39 @@ def build_rag_chain(file_path: str, session_id: str):
     )
 
     # 5. Build the LCEL retrieval chain + keep the retriever for citations
-    chain, retriever = _build_chain(vectordb)
-    rag_chains[session_id] = (chain, retriever)
+    chain, retriever = _build_chain(vectordb, provider, model_id)
+
+    # Store in the nested structure
+    if session_id not in rag_chains:
+        rag_chains[session_id] = {}
+    rag_chains[session_id][(provider, model_id)] = (chain, retriever)
     return chain
 
 
-def query_rag_chain(session_id: str, query: str) -> dict[str, Any]:
+def query_rag_chain(
+    session_id: str,
+    query: str,
+    provider: str | None = None,
+    model_id: str | None = None
+) -> dict[str, Any]:
     """QUERYING stage: answer a question using the session's document.
+
+    Args:
+        session_id: Unique session identifier
+        query: The user's question
+        provider: LLM provider (uses default if None)
+        model_id: Model identifier (uses default if None)
 
     Returns {"answer": str, "sources": [page numbers]}.
     """
-    cached = rag_chains.get(session_id)
+    # Use defaults if not specified
+    if provider is None or model_id is None:
+        provider, model_id = get_default_model()
+
+    # Check if we have a cached chain for this specific (provider, model_id) combination
+    session_chains = rag_chains.get(session_id, {})
+    cached = session_chains.get((provider, model_id))
+
     if cached is None:
         # Reload from persisted Chroma collection (survives restarts)
         collection_name = f"session_{session_id.replace('-', '_')}"
@@ -113,8 +149,12 @@ def query_rag_chain(session_id: str, query: str) -> dict[str, Any]:
             embedding_function=_embeddings(),
             persist_directory=CHROMA_DIR,
         )
-        chain, retriever = _build_chain(vectordb)
-        rag_chains[session_id] = (chain, retriever)
+        chain, retriever = _build_chain(vectordb, provider, model_id)
+
+        # Cache it for future use
+        if session_id not in rag_chains:
+            rag_chains[session_id] = {}
+        rag_chains[session_id][(provider, model_id)] = (chain, retriever)
     else:
         chain, retriever = cached
 

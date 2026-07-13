@@ -14,7 +14,13 @@ class Settings(BaseSettings):
 
     # Ollama LLM settings
     ollama_base_url: str = "http://ollama:11434"
-    ollama_model: str = "llama3.2"
+
+    # OpenAI settings
+    openai_api_key: str = ""
+
+    # Default LLM provider and model
+    default_llm_provider: str = "ollama"  # Options: "ollama", "openai"
+    default_llm_model: str = "llama3.2"
 
     # Tell pydantic-settings to read from backend/.env
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
