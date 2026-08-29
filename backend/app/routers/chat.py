@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services import db_service, rag_service
+from app.services.rag_service import SessionNotIndexedError
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -39,7 +40,7 @@ async def chat(
             request.query,
             request.model_id,
         )
-    except ValueError as e:
+    except SessionNotIndexedError as e:
         # e.g. session exists but no document was ever indexed for it
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail=str(e)

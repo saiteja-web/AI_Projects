@@ -13,6 +13,7 @@ Single LLM provider (Gemini); the model is selectable per query.
 import os
 from typing import Any
 
+from chromadb.errors import NotFoundError
 from langchain_chroma import Chroma
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -22,6 +23,11 @@ from langchain_community.embeddings import FastEmbedEmbeddings  # langchain-fast
 from app.core.config import settings
 from app.services.document_processor import process_pdf
 from app.services.llm_factory import create_llm, get_default_model
+
+
+class SessionNotIndexedError(LookupError):
+    """Raised when a session exists but no document was ever indexed for it."""
+
 
 # Where ChromaDB persists its vector index. Relative default works both
 # natively (cwd backend/) and in the container (cwd /app = mounted volume).
@@ -125,13 +131,17 @@ def query_rag_chain(
     if cached is None:
         # Reload from persisted Chroma collection (survives restarts)
         collection_name = _collection_for(session_id)
-        vectordb = Chroma(
-            collection_name=collection_name,
-            embedding_function=_embeddings(),
-            persist_directory=CHROMA_DIR,
-        )
-        if vectordb.count() == 0:
-            raise ValueError(f"No document indexed for session {session_id}")
+        try:
+            vectordb = Chroma(
+                collection_name=collection_name,
+                embedding_function=_embeddings(),
+                persist_directory=CHROMA_DIR,
+                create_collection_if_not_exists=False,
+            )
+        except NotFoundError:
+            raise SessionNotIndexedError(
+                f"No document indexed for session {session_id}"
+            ) from None
         chain, retriever = _build_chain(vectordb, model_id)
         rag_chains.setdefault(session_id, {})[model_id] = (chain, retriever)
     else:

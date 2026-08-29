@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from app.services import db_service
+from app.services.rag_service import SessionNotIndexedError
 
 
 @pytest.mark.asyncio
@@ -81,7 +82,9 @@ async def test_chat_returns_404_when_session_has_no_indexed_document(db_session,
 
     with patch(
         "app.routers.chat.rag_service.query_rag_chain",
-        side_effect=ValueError(f"No document indexed for session {session.id}"),
+        side_effect=SessionNotIndexedError(
+            f"No document indexed for session {session.id}"
+        ),
     ):
         response = await client.post(
             "/api/chat",
