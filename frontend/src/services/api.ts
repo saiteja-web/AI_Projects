@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { UploadResponse,ChatHistory,ChatRequest,ChatResponse, ModelsResponse } from '../types';
+import type { UploadResponse,ChatHistory,ChatResponse, ModelsResponse } from '../types';
 
 
 // Base URL for backend API
@@ -27,13 +27,11 @@ export async function uploadPDF(file:File): Promise<UploadResponse>{
 export async function sendChatMessage(
     sessionId: string,
     query: string,
-    provider?: string,
     modelId?: string
 ): Promise<ChatResponse> {
     const response = await api.post<ChatResponse>('/api/chat', {
         session_id: sessionId,
         query,
-        provider,
         model_id: modelId,
     });
     return response.data;

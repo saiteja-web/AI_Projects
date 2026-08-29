@@ -48,8 +48,12 @@ export function MessageList({ messages }: MessageListProps) {
                         {/* Show citations for AI messages */}
                         {message.role === 'ai' && message.sources.length > 0 && (
                             <div style={{ marginTop: '4px', display: 'flex', gap: '4px' }}>
-                                {message.sources.map((page) => (
-                                    <CitationBadge key={page} pageNumber={page} />
+                                {message.sources.map((source) => (
+                                    <CitationBadge
+                                        key={`${source.page}-${source.section}`}
+                                        page={source.page}
+                                        section={source.section}
+                                    />
                                 ))}
                             </div>
                         )}
