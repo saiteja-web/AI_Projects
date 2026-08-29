@@ -7,13 +7,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# ── Install CPU-only PyTorch FIRST ─────────────────────────────
-# torch's default build bundles ~2GB of NVIDIA CUDA libs that we don't need
-# (we run on CPU for embeddings). Installing from the CPU wheel index first
-# means sentence-transformers finds torch already satisfied and skips CUDA.
-RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
-
-# Install the rest of the dependencies
+# Install the dependencies (no torch — fastembed is ONNX-based)
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 

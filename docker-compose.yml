@@ -16,18 +16,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Ollama (local LLM — replaces HuggingFace/OpenAI) ────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    environment:
-      - OLLAMA_HOST=0.0.0.0
-    restart: unless-stopped
-
   # ── FastAPI backend ─────────────────────────────────────────
   backend:
     build: ./backend
@@ -35,9 +23,6 @@ services:
       - "8001:8001"
     env_file:
       - ./backend/.env
-    environment:
-      # Override to point at the ollama service hostname (not localhost)
-      - OLLAMA_BASE_URL=http://ollama:11434
     volumes:
       # Hot-reload: local code changes reflect in the container
       - ./backend:/app
@@ -48,8 +33,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      ollama:
-        condition: service_started
 
   # ── React frontend (Vite dev server) ────────────────────────
   frontend:
@@ -67,4 +50,3 @@ volumes:
   postgres_data:
   chroma_data:
   tmp_uploads:
-  ollama_data:
