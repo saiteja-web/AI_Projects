@@ -17,7 +17,7 @@ class MessageOut(BaseModel):
     id: UUID
     role: str
     content: str
-    sources: list[int]
+    sources: list[dict]
     created_at: datetime
 
     # Allow building from SQLAlchemy objects directly (ORM mode)
@@ -42,11 +42,10 @@ class UploadResponse(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str
     query: str = Field(min_length=1)  # empty string → 422
-    provider: str | None = None  # LLM provider ("ollama" or "openai")
     model_id: str | None = None  # Model identifier
 
 
 class ChatResponse(BaseModel):
     answer: str
-    sources: list[int]
+    sources: list[dict]
     session_id: str

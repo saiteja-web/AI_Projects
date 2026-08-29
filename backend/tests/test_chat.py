@@ -41,7 +41,10 @@ async def test_chat_returns_answer_and_persists_messages(db_session, client):
     async with db_session() as db:
         session = await db_service.create_session(db, "doc.pdf")
 
-    fake_rag = {"answer": "You get 24 paid leave days.", "sources": [1]}
+    fake_rag = {
+        "answer": "You get 24 paid leave days.",
+        "sources": [{"page": 1, "section": "Leave Policy"}],
+    }
 
     with patch(
         "app.routers.chat.rag_service.query_rag_chain",
@@ -56,7 +59,7 @@ async def test_chat_returns_answer_and_persists_messages(db_session, client):
     assert response.status_code == 200
     body = response.json()
     assert body["answer"] == "You get 24 paid leave days."
-    assert body["sources"] == [1]
+    assert body["sources"] == [{"page": 1, "section": "Leave Policy"}]
     assert body["session_id"] == str(session.id)
 
     # 2. Both messages were persisted
@@ -67,4 +70,23 @@ async def test_chat_returns_answer_and_persists_messages(db_session, client):
     assert messages[0]["content"] == "How much leave do I get?"
     assert messages[1]["role"] == "ai"
     assert messages[1]["content"] == "You get 24 paid leave days."
-    assert messages[1]["sources"] == [1]
+    assert messages[1]["sources"] == [{"page": 1, "section": "Leave Policy"}]
+
+
+@pytest.mark.asyncio
+async def test_chat_returns_404_when_session_has_no_indexed_document(db_session, client):
+    """A session that exists in the DB but has no indexed document → 404."""
+    async with db_session() as db:
+        session = await db_service.create_session(db, "never-indexed.pdf")
+
+    with patch(
+        "app.routers.chat.rag_service.query_rag_chain",
+        side_effect=ValueError(f"No document indexed for session {session.id}"),
+    ):
+        response = await client.post(
+            "/api/chat",
+            json={"session_id": str(session.id), "query": "anything"},
+        )
+
+    assert response.status_code == 404
+    assert "No document indexed" in response.json()["detail"]

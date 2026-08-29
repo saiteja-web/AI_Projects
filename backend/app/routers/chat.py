@@ -37,9 +37,13 @@ async def chat(
         result = rag_service.query_rag_chain(
             request.session_id,
             request.query,
-            request.provider,
-            request.model_id
+            request.model_id,
         )
+    except ValueError as e:
+        # e.g. session exists but no document was ever indexed for it
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

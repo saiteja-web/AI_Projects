@@ -23,7 +23,7 @@ async def save_message(
     session_id: str,
     role: str,
     content: str,
-    sources: list[int] | None = None,
+    sources: list[dict] | None = None,
 ) -> Message:
     """Insert one message row (either 'user' or 'ai')."""
     message = Message(

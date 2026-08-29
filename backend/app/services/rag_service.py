@@ -32,6 +32,11 @@ CHROMA_DIR = os.environ.get("CHROMA_DIR", "./chroma_db")
 rag_chains: dict[str, dict[str, tuple[Any, Any]]] = {}
 
 
+def _collection_for(session_id: str) -> str:
+    """Chroma collection name for a session (must match build and query)."""
+    return f"session_{session_id.replace('-', '_')}"
+
+
 def _llm(model_id: str):
     """Create the Gemini LLM via the factory."""
     return create_llm(model_id, temperature=0.3)
@@ -85,7 +90,7 @@ def build_rag_chain(file_path: str, session_id: str, model_id: str | None = None
     chunks = process_pdf(file_path)
 
     # 3. Embed each chunk and persist to a per-session Chroma collection
-    collection_name = f"session_{session_id.replace('-', '_')}"
+    collection_name = _collection_for(session_id)
     vectordb = Chroma.from_documents(
         documents=chunks,
         embedding=_embeddings(),
@@ -119,12 +124,14 @@ def query_rag_chain(
     cached = rag_chains.get(session_id, {}).get(model_id)
     if cached is None:
         # Reload from persisted Chroma collection (survives restarts)
-        collection_name = f"session_{session_id.replace('-', '_')}"
+        collection_name = _collection_for(session_id)
         vectordb = Chroma(
             collection_name=collection_name,
             embedding_function=_embeddings(),
             persist_directory=CHROMA_DIR,
         )
+        if vectordb.count() == 0:
+            raise ValueError(f"No document indexed for session {session_id}")
         chain, retriever = _build_chain(vectordb, model_id)
         rag_chains.setdefault(session_id, {})[model_id] = (chain, retriever)
     else:
