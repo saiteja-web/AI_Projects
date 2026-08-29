@@ -36,3 +36,9 @@ def test_get_model_by_id_finds_gemini():
     model = llm_factory.get_model_by_id("gemini-2.5-pro")
     assert model is not None
     assert model.name == "Gemini 2.5 Pro"
+
+
+def test_create_llm_requires_api_key(monkeypatch):
+    monkeypatch.setattr(settings, "gemini_api_key", "")
+    with pytest.raises(ValueError, match="GEMINI_API_KEY"):
+        llm_factory.create_llm("gemini-2.5-flash", temperature=0.3)

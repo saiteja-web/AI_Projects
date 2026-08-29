@@ -4,7 +4,6 @@ Single provider (Google Gemini) with three selectable models. The frontend
 model picker is driven by AVAILABLE_MODELS via GET /models/.
 """
 from dataclasses import dataclass
-from typing import Any
 
 from langchain_google_genai import ChatGoogleGenerativeAI
 
@@ -51,7 +50,7 @@ def get_model_by_id(model_id: str) -> ModelInfo | None:
     return None
 
 
-def create_llm(model_id: str, temperature: float = 0.3) -> Any:
+def create_llm(model_id: str, temperature: float = 0.3) -> ChatGoogleGenerativeAI:
     """Create a Gemini chat model instance.
 
     Args:
