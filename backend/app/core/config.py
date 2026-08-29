@@ -9,18 +9,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # These fields map 1:1 to keys in backend/.env
     database_url: str
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
     frontend_origin: str = "http://localhost:5173"
 
-    # Ollama LLM settings
-    ollama_base_url: str = "http://ollama:11434"
+    # Gemini API (https://aistudio.google.com/apikey)
+    gemini_api_key: str = ""
 
-    # OpenAI settings
-    openai_api_key: str = ""
-
-    # Default LLM provider and model
-    default_llm_provider: str = "ollama"  # Options: "ollama", "openai"
-    default_llm_model: str = "llama3.2"
+    # Default LLM model
+    default_llm_model: str = "gemini-2.5-flash"
 
     # Tell pydantic-settings to read from backend/.env
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
