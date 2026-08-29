@@ -29,6 +29,15 @@ class TestIsHeading:
     def test_lowercase_rejected(self):
         assert _is_heading("built rest apis") is False
 
+    def test_numbered_heading(self):
+        assert _is_heading("1. Experience") is True
+
+    def test_date_range_rejected(self):
+        assert _is_heading("2021 - 2023") is False
+
+    def test_comma_skill_line_becomes_heading_is_accepted_tradeoff(self):
+        assert _is_heading("REACT, PYTHON, SQL") is True
+
 
 class TestDetectSections:
     def test_splits_page_into_sections(self):

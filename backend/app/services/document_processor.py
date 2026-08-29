@@ -25,7 +25,7 @@ def _is_heading(line: str) -> bool:
     stripped = line.strip()
     if not stripped or len(stripped) >= _MAX_HEADING_LEN:
         return False
-    if stripped.endswith((".", ",", ";", ":")):
+    if stripped.endswith((".", ",", ";")):
         return False
     return stripped.isupper() or stripped.istitle()
 
@@ -41,7 +41,6 @@ def detect_sections(pages: list[Document]) -> list[Document]:
     seen_text = False
     for page in pages:
         body: dict[str, list[str]] = {}
-        order: list[str] = []
         for line in page.page_content.splitlines():
             heading = _is_heading(line)
             if heading and not seen_text and not line.strip().isupper():
@@ -56,9 +55,10 @@ def detect_sections(pages: list[Document]) -> list[Document]:
                 seen_text = True
             if current not in body:
                 body[current] = []
-                order.append(current)
             body[current].append(line)
-        for section in order:
+        # Same heading reappearing later on a page merges its blocks (rare,
+        # e.g. repeated table headers) — accepted trade-off.
+        for section in body:
             text = "\n".join(body[section]).strip()
             if text:
                 section_docs.append(
