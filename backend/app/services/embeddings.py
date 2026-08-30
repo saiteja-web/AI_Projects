@@ -31,10 +31,10 @@ class FastEmbedEmbedding(BaseEmbedding):
         return self._get_text_embedding(query)
 
     def _get_text_embedding(self, text: str) -> List[float]:
-        return list(next(self._model.embed([text])))
+        return next(self._model.embed([text])).tolist()
 
     def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
-        return [list(vec) for vec in self._model.embed(texts)]
+        return [vec.tolist() for vec in self._model.embed(texts)]
 
     def get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Public batch API (removed from BaseEmbedding in llama_index >= 0.11)."""
