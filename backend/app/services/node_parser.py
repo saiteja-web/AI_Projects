@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 
 from pypdf import PdfReader
+from llama_index.core.bridge.pydantic import Field
 from llama_index.core.node_parser.interface import NodeParser
 from llama_index.core.schema import BaseNode, Document, TextNode
 
@@ -120,8 +121,10 @@ class SectionNodeParser(NodeParser):
     """Parse page Documents into section-aware, sentence-grouped TextNodes."""
 
     session_id: str
-    sentences_per_chunk: int = 6
-    sentence_overlap: int = 1
+    # ge constraints: sentences_per_chunk < 1 would emit empty chunks;
+    # a negative overlap would silently drop sentences between chunks.
+    sentences_per_chunk: int = Field(default=6, ge=1)
+    sentence_overlap: int = Field(default=1, ge=0)
 
     @classmethod
     def class_name(cls) -> str:

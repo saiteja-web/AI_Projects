@@ -143,6 +143,25 @@ class TestSectionNodeParser:
         assert all(n.metadata["source"] == "r" for n in nodes)
         assert all(n.metadata["page"] == 0 for n in nodes)
 
+    def test_section_spanning_pages_chunks_with_correct_pages(self):
+        pages = [
+            Document(
+                text="SKILLS\nPython, FastAPI, React. Strong testing. Systems design.",
+                metadata={"source": "r", "page": 0},
+            ),
+            Document(
+                text="More skills here. Docker and Kubernetes.",
+                metadata={"source": "r", "page": 1},
+            ),
+        ]
+        nodes = self._parser(
+            session_id="s1", sentences_per_chunk=2, sentence_overlap=0
+        ).get_nodes_from_documents(pages)
+        assert len(nodes) == 3  # 3 sentences -> 2 chunks (page 0); 2 -> 1 chunk (page 1)
+        assert [n.metadata["page"] for n in nodes] == [0, 0, 1]
+        assert [n.metadata["chunk_index"] for n in nodes] == [0, 1, 2]
+        assert nodes[2].get_content().startswith("r > SKILLS\n\nMore skills here.")
+
 
 class TestParsePdfToNodes:
     def test_loads_pages_and_injects_session_id(self, monkeypatch):
@@ -165,26 +184,25 @@ class TestParsePdfToNodes:
         nodes = node_parser.parse_pdf_to_nodes("r.pdf", "sess-1")
 
         assert captured["session_id"] == "sess-1"
+        assert captured["sentences_per_chunk"] == node_parser.settings.sentences_per_chunk
+        assert captured["sentence_overlap"] == node_parser.settings.sentence_overlap
         assert nodes
         assert all(n.metadata["session_id"] == "sess-1" for n in nodes)
         assert [n.metadata["chunk_index"] for n in nodes] == list(range(len(nodes)))
 
 
 class TestLoadPdfPages:
-    def test_real_pdf_pages_have_source_and_zero_based_page(self):
+    def test_real_pdf_pages_have_source_and_zero_based_page(self, tmp_path):
         # Tiny synthetic PDF via pypdf writer keeps this offline and fast.
         from pypdf import PdfWriter
-        import io
 
         writer = PdfWriter()
         writer.add_blank_page(width=612, height=792)
-        buf = io.BytesIO()
-        writer.write(buf)
-        buf.seek(0)
-        with open("/tmp/_np_test.pdf", "wb") as f:
-            f.write(buf.read())
+        pdf_file = tmp_path / "_np_test.pdf"
+        with pdf_file.open("wb") as f:
+            writer.write(f)
 
-        pages = node_parser.load_pdf_pages("/tmp/_np_test.pdf")
+        pages = node_parser.load_pdf_pages(str(pdf_file))
         assert len(pages) == 1
         assert pages[0].metadata["source"] == "_np_test"
         assert pages[0].metadata["page"] == 0
