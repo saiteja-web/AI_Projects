@@ -18,6 +18,22 @@ class Settings(BaseSettings):
     # Default LLM model
     default_llm_model: str = "gemini-2.5-flash"
 
+    # ── LlamaIndex RAG knobs ─────────────────────────────────
+    # Vector dimension of the embedding model (bge-small-en-v1.5 = 384)
+    embed_dim: int = 384
+    # Chunking: a chunk = N whole sentences within a section
+    sentences_per_chunk: int = 6
+    sentence_overlap: int = 1
+    # pgvector HNSW index tuning
+    hnsw_m: int = 16
+    hnsw_ef_construction: int = 64
+    hnsw_ef_search: int = 40
+
+    # ── LangSmith tracing (optional; OTLP via OpenLLMetry) ──
+    langsmith_api_key: str = ""
+    langsmith_project: str = "rag-doc-chat"
+    langsmith_tracing: bool = False
+
     # Tell pydantic-settings to read from backend/.env
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
