@@ -13,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.core.config import settings
 from app.core.database import Base, engine
+from app.core.tracing import setup_tracing
 # Import models so SQLAlchemy registers them with Base.metadata before create_all
 from app.models import db_models  # noqa: F401
 from app.routers import chat, history, models, upload
@@ -20,7 +21,8 @@ from app.routers import chat, history, models, upload
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Create DB tables on startup. In production you'd use Alembic migrations."""
+    """Set up optional LangSmith tracing, then create DB tables on startup."""
+    setup_tracing()
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield
