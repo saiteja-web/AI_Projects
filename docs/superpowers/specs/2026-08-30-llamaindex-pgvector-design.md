@@ -23,7 +23,7 @@ Motivating constraints: user is learning LlamaIndex; wants HNSW access (Pinecone
 | Vector store | pgvector on existing Postgres (`doc_chat`), HNSW index, cosine distance |
 | Why not Pinecone | ANN algorithm is opaque — no HNSW access or tuning |
 | Chunking unit | N complete sentences per chunk (default 6, overlap 1), grouped within a section — not character-constrained |
-| LLM | Gemini only, via `llama-index-llms-gemini`; same 3-model registry |
+| LLM | Gemini only, via `llama-index-llms-google-genai` (class `GoogleGenAI`; the old `llama-index-llms-gemini` package uses the deprecated Google SDK); same 3-model registry |
 | Embeddings | fastembed `BAAI/bge-small-en-v1.5` (384-dim) via `llama-index-embeddings-fastembed` |
 | Observability | LangSmith, OTLP ingest (`https://api.smith.langchain.com/otel`), env-gated |
 | API contract | Unchanged: `{answer, sources: [{page, section}]}`; frontend untouched |
@@ -62,7 +62,7 @@ The HTTP API surface is byte-identical to today: same request/response schemas, 
 ### `app/services/llm_factory.py`
 
 - `ModelInfo`, `AVAILABLE_MODELS`, `get_model_by_id`, `get_default_model` unchanged.
-- `create_llm` returns `Gemini` (from `llama_index.llms.gemini`) with the same `(model_id, temperature, api_key)` semantics.
+- `create_llm` returns `GoogleGenAI` (from `llama_index.llms.google_genai`) with the same `(model_id, temperature, api_key)` semantics.
 
 ### `app/services/rag_service.py` (rewritten)
 
@@ -120,7 +120,7 @@ Everything existing stays (database_url, embedding_model, gemini_api_key, defaul
 ## Dependencies (`backend/requirements.txt`)
 
 - Remove: `langchain`, `langchain-chroma`, `langchain-community`, `langchain-google-genai`
-- Add: `llama-index-core`, `llama-index-llms-gemini`, `llama-index-embeddings-fastembed`, `llama-index-vector-stores-postgres`, `traceloop-sdk`
+- Add: `llama-index-core`, `llama-index-llms-google-genai`, `llama-index-embeddings-fastembed`, `llama-index-vector-stores-postgres`, `traceloop-sdk`
 - Keep: `fastembed`, `pypdf` (now used directly), `psycopg2-binary` (PGVectorStore sync driver), `asyncpg` (app data), all web/db/test deps
 - Pin top-level LlamaIndex packages; let pip resolve a consistent `llama-index-core`
 
@@ -180,7 +180,7 @@ HNSW_EF_SEARCH=40
 - `traceloop-sdk` LlamaIndex instrumentation gaps → fallback to manual OTel provider + LlamaIndex dispatcher span handler (both documented paths)
 - Regex sentence splitter edge cases (abbreviations, bullet lists in resumes) → bullets rarely end with `.`; oversized/undersized chunks only degrade retrieval granularity, never break it; regressions caught by `test_node_parser.py`
 - pgvector HNSW on tiny per-session datasets behaves differently than at scale → fine for learning; ef_search knobs exist precisely to explore this
-- `llama-index-llms-gemini` API differences vs `langchain-google-genai` (e.g., response object shape) → contained in `rag_service.py` + `llm_factory.py`
+- `llama-index-llms-google-genai` API differences vs `langchain-google-genai` (e.g., response object shape) → contained in `rag_service.py` + `llm_factory.py`
 
 ## Out of scope
 
