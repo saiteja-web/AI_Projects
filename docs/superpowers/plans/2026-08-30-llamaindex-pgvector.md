@@ -143,8 +143,10 @@ LangChain stays installed until Task 7 so the test suite stays green between tas
 - [ ] **Step 1: Install the LlamaIndex family + OpenLLMetry into the venv**
 
 ```bash
-backend/.venv/bin/pip install llama-index-core llama-index-llms-google-genai llama-index-embeddings-fastembed llama-index-vector-stores-postgres traceloop-sdk
+backend/.venv/bin/pip install llama-index-core llama-index-llms-google-genai llama-index-vector-stores-postgres traceloop-sdk
 ```
+
+(NOTE: `llama-index-embeddings-fastembed` is intentionally NOT installed — it requires Python <3.13 and pins `fastembed<0.2`, incompatible with this py3.13 venv and `fastembed==0.8.0`. A custom wrapper is built in Task 3b instead.)
 
 Expected: installs successfully. If pip reports a version conflict involving `fastembed` or `sqlalchemy`, STOP and report — do not force reinstall.
 
@@ -157,7 +159,6 @@ from llama_index.core.response_synthesizers import get_response_synthesizer
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 from llama_index.core.node_parser.interface import NodeParser
 from llama_index.core.schema import Document, TextNode
-from llama_index.embeddings.fastembed import FastEmbedEmbedding
 from llama_index.llms.google_genai import GoogleGenAI
 from llama_index.vector_stores.postgres import PGVectorStore
 print('all llama-index imports OK')
@@ -270,6 +271,132 @@ Expected: 2 passed.
 ```bash
 git add backend/app/core/config.py backend/tests/test_config.py
 git commit -m "feat: config knobs for llamaindex rag (chunking, hnsw, langsmith)"
+```
+
+---
+
+### Task 3b: Custom FastEmbed embedding wrapper (TDD)
+
+**Files:**
+- Create: `backend/app/services/embeddings.py`
+- Test: `backend/tests/test_embeddings.py` (new)
+
+`llama-index-embeddings-fastembed` cannot be installed on this py3.13 venv with `fastembed==0.8.0` (see Task 2 note). This wrapper implements LlamaIndex's `BaseEmbedding` over `fastembed` directly — the same pattern LlamaIndex integrations use internally.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `backend/tests/test_embeddings.py`:
+
+```python
+"""Tests for the custom fastembed→LlamaIndex embedding wrapper (offline)."""
+import pytest
+
+from app.services import embeddings as embeddings_module
+from app.services.embeddings import FastEmbedEmbedding
+
+
+class _FakeTextEmbedding:
+    """Stands in for fastembed.TextEmbedding so tests never download a model."""
+
+    def __init__(self, model_name):
+        self.model_name = model_name
+
+    def embed(self, texts):
+        return iter([[0.1, 0.2, 0.3] for _ in texts])
+
+
+@pytest.fixture
+def fake_fastembed(monkeypatch):
+    monkeypatch.setattr(embeddings_module, "TextEmbedding", _FakeTextEmbedding)
+
+
+def test_wraps_fastembed_with_configured_model(fake_fastembed):
+    emb = FastEmbedEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    assert emb.model_name == "BAAI/bge-small-en-v1.5"
+    assert emb._model.model_name == "BAAI/bge-small-en-v1.5"
+
+
+def test_query_and_text_embeddings_return_vectors(fake_fastembed):
+    emb = FastEmbedEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    assert emb.get_query_embedding("hello") == [0.1, 0.2, 0.3]
+    assert emb.get_text_embedding("hello") == [0.1, 0.2, 0.3]
+
+
+def test_batch_text_embeddings(fake_fastembed):
+    emb = FastEmbedEmbedding(model_name="BAAI/bge-small-en-v1.5")
+    assert emb.get_text_embeddings(["a", "b"]) == [[0.1, 0.2, 0.3], [0.1, 0.2, 0.3]]
+```
+
+- [ ] **Step 2: Run to verify failure**
+
+```bash
+cd backend && .venv/bin/pytest tests/test_embeddings.py -q; cd ..
+```
+
+Expected: FAIL — `ModuleNotFoundError: No module named 'app.services.embeddings'`.
+
+- [ ] **Step 3: Implement embeddings.py**
+
+Create `backend/app/services/embeddings.py`:
+
+```python
+"""Custom fastembed → LlamaIndex embedding wrapper.
+
+The llama-index-embeddings-fastembed integration package cannot be used on
+this venv (it requires Python <3.13 and pins fastembed<0.2, while the project
+pins fastembed==0.8.0). This implements LlamaIndex's BaseEmbedding over
+fastembed directly — the same shape its official integrations use.
+"""
+from typing import List
+
+from fastembed import TextEmbedding
+from pydantic import PrivateAttr
+
+from llama_index.core.base.embeddings.base import BaseEmbedding
+
+
+class FastEmbedEmbedding(BaseEmbedding):
+    """Local ONNX embeddings (downloads the model on first use, then cached)."""
+
+    model_name: str = "BAAI/bge-small-en-v1.5"
+    _model: TextEmbedding = PrivateAttr()
+
+    def __init__(self, model_name: str = "BAAI/bge-small-en-v1.5", **kwargs):
+        super().__init__(model_name=model_name, **kwargs)
+        self._model = TextEmbedding(model_name=model_name)
+
+    @classmethod
+    def class_name(cls) -> str:
+        return "FastEmbedEmbedding"
+
+    def _get_query_embedding(self, query: str) -> List[float]:
+        return self._get_text_embedding(query)
+
+    def _get_text_embedding(self, text: str) -> List[float]:
+        return list(next(self._model.embed([text])))
+
+    def _get_text_embeddings(self, texts: List[str]) -> List[List[float]]:
+        return [list(vec) for vec in self._model.embed(texts)]
+
+    async def _aget_query_embedding(self, query: str) -> List[float]:
+        return self._get_query_embedding(query)
+```
+
+(`BaseEmbedding` is a pydantic model; the fastembed client is held in a `PrivateAttr`.)
+
+- [ ] **Step 4: Run the tests to verify they pass**
+
+```bash
+cd backend && .venv/bin/pytest tests/test_embeddings.py -q; cd ..
+```
+
+Expected: 3 passed.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/app/services/embeddings.py backend/tests/test_embeddings.py
+git commit -m "feat: custom fastembed embedding wrapper for llamaindex"
 ```
 
 ---
@@ -887,10 +1014,10 @@ from llama_index.core import VectorStoreIndex
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.response_synthesizers import get_response_synthesizer
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
-from llama_index.embeddings.fastembed import FastEmbedEmbedding
 from llama_index.vector_stores.postgres import PGVectorStore
 
 from app.core.config import settings
+from app.services.embeddings import FastEmbedEmbedding
 from app.services.llm_factory import create_llm, get_default_model
 from app.services.node_parser import parse_pdf_to_nodes
 
@@ -1152,7 +1279,6 @@ psycopg2-binary==2.9.10          # sync driver used by llama-index PGVectorStore
 # ── RAG pipeline (LlamaIndex) ─────────────────────────────────
 llama-index-core==<PIN from pip freeze>
 llama-index-llms-google-genai==<PIN>
-llama-index-embeddings-fastembed==<PIN>
 llama-index-vector-stores-postgres==<PIN>
 fastembed==<PIN — currently 0.8.0>
 pypdf==<PIN — currently 5.0.1>
@@ -1440,7 +1566,7 @@ Cell 5 (code) — embed:
 
 ```python
 # 3. EMBED — local ONNX vectors (downloads ~130MB on first use, then cached)
-from llama_index.embeddings.fastembed import FastEmbedEmbedding
+from app.services.embeddings import FastEmbedEmbedding
 
 embed_model = FastEmbedEmbedding(model_name="BAAI/bge-small-en-v1.5")
 vec = embed_model.get_text_embedding(nodes[0].get_content())

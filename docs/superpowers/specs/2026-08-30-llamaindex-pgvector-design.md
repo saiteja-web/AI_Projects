@@ -24,7 +24,7 @@ Motivating constraints: user is learning LlamaIndex; wants HNSW access (Pinecone
 | Why not Pinecone | ANN algorithm is opaque — no HNSW access or tuning |
 | Chunking unit | N complete sentences per chunk (default 6, overlap 1), grouped within a section — not character-constrained |
 | LLM | Gemini only, via `llama-index-llms-google-genai` (class `GoogleGenAI`; the old `llama-index-llms-gemini` package uses the deprecated Google SDK); same 3-model registry |
-| Embeddings | fastembed `BAAI/bge-small-en-v1.5` (384-dim) via `llama-index-embeddings-fastembed` |
+| Embeddings | fastembed local (`BAAI/bge-small-en-v1.5`, 384-dim, ONNX, no torch) via a custom ~30-line `FastEmbedEmbedding(BaseEmbedding)` wrapper in `app/services/embeddings.py` — the `llama-index-embeddings-fastembed` integration package is unusable here (requires Python <3.13 and pins `fastembed<0.2`, conflicting with `fastembed==0.8.0` on this py3.13 venv) |
 | Observability | LangSmith, OTLP ingest (`https://api.smith.langchain.com/otel`), env-gated |
 | API contract | Unchanged: `{answer, sources: [{page, section}]}`; frontend untouched |
 | Postgres image | Swap `postgres:16-alpine` → `pgvector/pgvector:pg16` (drop-in, same volume) |
@@ -120,7 +120,7 @@ Everything existing stays (database_url, embedding_model, gemini_api_key, defaul
 ## Dependencies (`backend/requirements.txt`)
 
 - Remove: `langchain`, `langchain-chroma`, `langchain-community`, `langchain-google-genai`
-- Add: `llama-index-core`, `llama-index-llms-google-genai`, `llama-index-embeddings-fastembed`, `llama-index-vector-stores-postgres`, `traceloop-sdk`
+- Add: `llama-index-core`, `llama-index-llms-google-genai`, `llama-index-vector-stores-postgres`, `traceloop-sdk` (embeddings integration package dropped — see Decisions; fastembed stays and the wrapper lives in app code)
 - Keep: `fastembed`, `pypdf` (now used directly), `psycopg2-binary` (PGVectorStore sync driver), `asyncpg` (app data), all web/db/test deps
 - Pin top-level LlamaIndex packages; let pip resolve a consistent `llama-index-core`
 
