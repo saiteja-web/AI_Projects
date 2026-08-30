@@ -9,7 +9,6 @@ and generation spans (prompt, tokens, latency) in LANGSMITH_PROJECT.
 Disabled by default (LANGSMITH_TRACING=false): zero overhead, no imports.
 """
 import logging
-import os
 
 from app.core.config import settings
 
@@ -28,17 +27,27 @@ def setup_tracing() -> None:
         )
         return
 
-    os.environ.setdefault("OTEL_EXPORTER_OTLP_ENDPOINT", _LANGSMITH_OTLP_ENDPOINT)
-    os.environ.setdefault(
-        "OTEL_EXPORTER_OTLP_HEADERS",
-        f"x-api-key={settings.langsmith_api_key},"
-        f"Langsmith-Project={settings.langsmith_project}",
-    )
+    # Explicit params: traceloop-sdk ignores the generic OTEL_EXPORTER_OTLP_*
+    # env vars; api_endpoint/headers are its supported configuration surface.
+    # Dict headers also sidestep comma/space escaping in header strings.
+    from traceloop.sdk import Traceloop  # heavy; only when tracing
 
-    # Imported lazily: traceloop-sdk is heavy and only needed when tracing.
-    from traceloop.sdk import Traceloop
+    try:
+        Traceloop.init(
+            app_name=settings.langsmith_project,
+            api_endpoint=_LANGSMITH_OTLP_ENDPOINT,
+            headers={
+                "x-api-key": settings.langsmith_api_key,
+                "Langsmith-Project": settings.langsmith_project,
+            },
+        )
+    except Exception:
+        # Observability must degrade, never take the app down.
+        logger.exception(
+            "LangSmith tracing failed to initialize — continuing without it"
+        )
+        return
 
-    Traceloop.init(app_name=settings.langsmith_project)
     logger.info(
         "LangSmith tracing enabled (project=%s, endpoint=%s)",
         settings.langsmith_project,

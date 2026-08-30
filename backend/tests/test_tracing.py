@@ -1,5 +1,4 @@
 """Tests for env-gated LangSmith tracing setup (offline, no OTel SDK)."""
-import os
 import sys
 from types import SimpleNamespace
 
@@ -7,10 +6,27 @@ from app.core import tracing
 from app.core.config import settings
 
 
+def _stub_traceloop(monkeypatch, init_impl):
+    """Install fake traceloop modules whose Traceloop.init runs init_impl."""
+    calls = {}
+
+    def init(**kwargs):
+        calls.update(kwargs)
+        init_impl(**kwargs)
+
+    fake = SimpleNamespace(init=init)
+    monkeypatch.setitem(
+        sys.modules, "traceloop", SimpleNamespace(sdk=SimpleNamespace(Traceloop=fake))
+    )
+    monkeypatch.setitem(
+        sys.modules, "traceloop.sdk", SimpleNamespace(Traceloop=fake)
+    )
+    return calls
+
+
 def test_tracing_disabled_is_a_noop(monkeypatch):
     monkeypatch.setattr(settings, "langsmith_tracing", False)
-    # No env touched, no traceloop import attempted (nothing stubbed → would
-    # blow up if setup_tracing tried to import it).
+    # No traceloop stub → would blow up if setup_tracing tried to import it.
     assert tracing.setup_tracing() is None
 
 
@@ -18,39 +34,31 @@ def test_tracing_enabled_configures_traceloop(monkeypatch):
     monkeypatch.setattr(settings, "langsmith_tracing", True)
     monkeypatch.setattr(settings, "langsmith_api_key", "test-key")
     monkeypatch.setattr(settings, "langsmith_project", "test-project")
-    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
-    monkeypatch.delenv("OTEL_EXPORTER_OTLP_HEADERS", raising=False)
 
-    class _FakeTraceloop:
-        def __init__(self):
-            self.calls = {}
-
-        def init(self, **kwargs):
-            self.calls.update(kwargs)
-
-    fake = _FakeTraceloop()
-    monkeypatch.setitem(
-        sys.modules, "traceloop", SimpleNamespace(sdk=SimpleNamespace(Traceloop=fake))
-    )
-    monkeypatch.setitem(
-        sys.modules, "traceloop.sdk", SimpleNamespace(Traceloop=fake)
-    )
-
+    calls = _stub_traceloop(monkeypatch, lambda **kw: None)
     tracing.setup_tracing()
 
-    assert fake.calls["app_name"] == "test-project"
-    assert (
-        os.environ["OTEL_EXPORTER_OTLP_ENDPOINT"]
-        == "https://api.smith.langchain.com/otel/v1/traces"
-    )
-    assert "x-api-key=test-key" in os.environ["OTEL_EXPORTER_OTLP_HEADERS"]
-    assert "Langsmith-Project=test-project" in os.environ["OTEL_EXPORTER_OTLP_HEADERS"]
+    assert calls["app_name"] == "test-project"
+    assert calls["api_endpoint"] == "https://api.smith.langchain.com/otel/v1/traces"
+    assert calls["headers"]["x-api-key"] == "test-key"
+    assert calls["headers"]["Langsmith-Project"] == "test-project"
 
 
 def test_tracing_without_api_key_is_skipped(monkeypatch):
     monkeypatch.setattr(settings, "langsmith_tracing", True)
     monkeypatch.setattr(settings, "langsmith_api_key", "")
-    monkeypatch.delenv("OTEL_EXPORTER_OTLP_ENDPOINT", raising=False)
 
     assert tracing.setup_tracing() is None
-    assert "OTEL_EXPORTER_OTLP_ENDPOINT" not in os.environ
+
+
+def test_traceloop_failure_degrades_without_raising(monkeypatch):
+    monkeypatch.setattr(settings, "langsmith_tracing", True)
+    monkeypatch.setattr(settings, "langsmith_api_key", "test-key")
+
+    def _boom(**kwargs):
+        raise RuntimeError("exporter construction failed")
+
+    _stub_traceloop(monkeypatch, _boom)
+
+    # Observability must degrade — never take app startup down.
+    assert tracing.setup_tracing() is None
