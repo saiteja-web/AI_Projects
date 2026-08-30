@@ -4,28 +4,35 @@ uvicorn[standard]==0.30.6
 python-multipart==0.0.9          # required by FastAPI for file uploads
 
 # ── Config / env ───────────────────────────────────────────────
-pydantic==2.10.3
+pydantic==2.13.5
 pydantic-settings==2.11.0
 python-dotenv==1.0.1             # notebook reads backend/.env via load_dotenv
 
-# ── Database (async) ───────────────────────────────────────────
+# ── Database (async + pgvector sync driver) ────────────────────
 sqlalchemy==2.0.35
 greenlet==3.5.5                  # required by SQLAlchemy async engine
 asyncpg==0.30.0                  # async PostgreSQL driver
-psycopg2-binary==2.9.10          # sync fallback (used by some tooling)
+psycopg2-binary==2.9.10          # sync driver used by llama-index PGVectorStore
 
-# ── RAG pipeline ───────────────────────────────────────────────
-# Pin the top-level langchain packages and let pip resolve a compatible
-# langchain-core across the whole family (avoids the 0.x vs 1.x split).
-langchain==1.3.13
-langchain-chroma==1.1.0
-langchain-community==0.4.2       # PyPDFLoader + other community integrations
-langchain-google-genai==3.2.0    # Gemini LLM
-fastembed==0.8.0                 # ONNX embeddings, no torch (langchain-fastembed does not exist on PyPI; plan-documented fallback)
-pypdf==5.0.1                     # version dictated by langchain-chroma (>=1.3.5)
+# ── RAG pipeline (LlamaIndex) ─────────────────────────────────
+llama-index-core==0.14.24
+llama-index-llms-google-genai==0.10.0
+llama-index-vector-stores-postgres==0.8.1
+llama-index-instrumentation==0.6.0
+llama-index-workflows==2.23.3
+google-genai==2.20.0             # Gemini SDK used by llama-index-llms-google-genai
+fastembed==0.8.0                 # local ONNX embeddings (custom wrapper in app/services/embeddings.py)
+pypdf==5.0.1                     # PDF loading (app/services/node_parser.py)
+pgvector==0.5.0                  # vector column support used by PGVectorStore
+
+# ── Observability (LangSmith via OpenLLMetry/OTel) ────────────
+traceloop-sdk==0.62.3
+opentelemetry-sdk==1.44.0
+opentelemetry-exporter-otlp-proto-grpc==1.44.0
+opentelemetry-exporter-otlp-proto-http==1.44.0
 
 # ── Notebook / testing ─────────────────────────────────────────
 ipykernel==6.29.5                # Jupyter kernel for the experiments notebook
 pytest==8.3.3
 pytest-asyncio==0.24.0
-httpx==0.27.2                    # async client for testing FastAPI
+httpx==0.28.1                    # async client for testing FastAPI
