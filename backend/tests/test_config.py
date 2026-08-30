@@ -3,8 +3,10 @@ from app.core.config import Settings
 
 
 def _fresh_settings() -> Settings:
-    """Instantiate Settings directly so env-file values don't mask defaults."""
-    return Settings(database_url="postgresql+asyncpg://u:p@localhost:5432/db")
+    """Instantiate Settings with the .env file disabled so the asserts
+    pin the field defaults themselves (shell-exported vars could still
+    leak through, but .env tuning cannot mask them)."""
+    return Settings(database_url="postgresql+asyncpg://u:p@localhost:5432/db", _env_file=None)
 
 
 def test_rag_knobs_have_defaults():
