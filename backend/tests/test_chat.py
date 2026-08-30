@@ -2,7 +2,7 @@
 
 We test the contract (status codes + response shape) without burning real
 LLM calls: the 404 and 422 paths need no LLM, and the happy path mocks
-query_rag_chain so it stays fast, free, and deterministic.
+query_rag so it stays fast, free, and deterministic.
 """
 from unittest.mock import patch
 
@@ -48,7 +48,7 @@ async def test_chat_returns_answer_and_persists_messages(db_session, client):
     }
 
     with patch(
-        "app.routers.chat.rag_service.query_rag_chain",
+        "app.routers.chat.rag_service.query_rag",
         return_value=fake_rag,
     ):
         response = await client.post(
@@ -81,7 +81,7 @@ async def test_chat_returns_404_when_session_has_no_indexed_document(db_session,
         session = await db_service.create_session(db, "never-indexed.pdf")
 
     with patch(
-        "app.routers.chat.rag_service.query_rag_chain",
+        "app.routers.chat.rag_service.query_rag",
         side_effect=SessionNotIndexedError(
             f"No document indexed for session {session.id}"
         ),

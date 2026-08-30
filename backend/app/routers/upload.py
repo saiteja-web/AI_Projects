@@ -1,6 +1,6 @@
 """Upload router — POST /api/upload
 
-Accepts a PDF, indexes it into ChromaDB, and creates a chat session.
+Accepts a PDF, indexes it into pgvector, and creates a chat session.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,11 +35,11 @@ async def upload_pdf(
     finally:
         await file.close()
 
-    # 4. Build the RAG chain (loads + chunks + embeds + indexes into ChromaDB)
+    # 4. Build the RAG index (parse + embed + store in pgvector)
     #    This is synchronous/heavy — brute-force OK for dev. Production would use
     #    a background task (FastAPI BackgroundTasks) so the HTTP call returns fast.
     try:
-        rag_service.build_rag_chain(file_path, session_id)
+        rag_service.build_rag_index(file_path, session_id)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

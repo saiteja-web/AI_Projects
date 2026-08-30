@@ -35,7 +35,7 @@ async def chat(
 
     # 2. Run the RAG query (retrieves chunks + asks the LLM)
     try:
-        result = rag_service.query_rag_chain(
+        result = rag_service.query_rag(
             request.session_id,
             request.query,
             request.model_id,
