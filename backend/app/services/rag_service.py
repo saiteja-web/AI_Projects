@@ -102,7 +102,7 @@ def _retriever_for(index: VectorStoreIndex, session_id: str):
 def _synthesizer_for(model_id: str):
     return get_response_synthesizer(
         llm=create_llm(model_id, temperature=0.3),
-        text_qa_prompt=_QA_PROMPT,
+        text_qa_template=_QA_PROMPT,
         response_mode="compact",
     )
 
