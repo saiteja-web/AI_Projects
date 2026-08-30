@@ -103,3 +103,40 @@ def test_build_then_query_hits_cache_without_rebuild(monkeypatch):
     assert builds["count"] == 1  # cache hit: no index rebuild
     assert result["answer"] == "42 days"
     assert result["sources"] == [{"page": 1, "section": "SKILLS"}]
+
+
+def test_build_rag_index_backs_index_with_our_store(monkeypatch):
+    """Regression: the pgvector store must back the built index.
+
+    Core 0.14 silently ignores VectorStoreIndex(vector_store=...) — the store
+    must arrive via storage_context, else the index is backed by an in-memory
+    SimpleVectorStore and nothing persists.
+    """
+    from llama_index.core.embeddings import MockEmbedding
+    from llama_index.core.schema import TextNode
+    from llama_index.core.vector_stores import SimpleVectorStore
+
+    fake_store = SimpleVectorStore()
+    real_node = TextNode(
+        text="SKILLS content", metadata={"page": 1, "section": "SKILLS"}
+    )
+    _patch_pipeline(monkeypatch, retrieved_nodes=[_FakeNode(1, "SKILLS")])
+    monkeypatch.setattr(rag_service, "_vector_store", lambda: fake_store)
+    monkeypatch.setattr(
+        rag_service, "parse_pdf_to_nodes", lambda p, s: [real_node]
+    )
+    monkeypatch.setattr(
+        rag_service.LlamaSettings, "_embed_model", MockEmbedding(embed_dim=384)
+    )
+    monkeypatch.setattr(
+        rag_service,
+        "_synthesizer_for",
+        lambda model_id: SimpleNamespace(
+            synthesize=lambda query, nodes: SimpleNamespace(response="ok")
+        ),
+    )
+    rag_service.rag_indexes.clear()
+
+    retriever, _ = rag_service.build_rag_index("f.pdf", "s1", model_id="m1")
+
+    assert retriever._index._vector_store is fake_store

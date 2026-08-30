@@ -3,6 +3,7 @@
 Accepts a PDF, indexes it into pgvector, and creates a chat session.
 """
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
@@ -35,11 +36,11 @@ async def upload_pdf(
     finally:
         await file.close()
 
-    # 4. Build the RAG index (parse + embed + store in pgvector)
-    #    This is synchronous/heavy — brute-force OK for dev. Production would use
-    #    a background task (FastAPI BackgroundTasks) so the HTTP call returns fast.
+    # 4. Build the RAG index (parse + embed + store in pgvector). The heavy
+    #    sync work runs in the threadpool: the LlamaIndex calls expect a
+    #    thread with no running event loop, and this keeps the loop free.
     try:
-        rag_service.build_rag_index(file_path, session_id)
+        await run_in_threadpool(rag_service.build_rag_index, file_path, session_id)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

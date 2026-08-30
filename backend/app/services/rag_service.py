@@ -17,6 +17,7 @@ from llama_index.core import Settings as LlamaSettings
 from llama_index.core import VectorStoreIndex
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.response_synthesizers import get_response_synthesizer
+from llama_index.core.storage.storage_context import StorageContext
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 from llama_index.vector_stores.postgres import PGVectorStore
 
@@ -124,7 +125,13 @@ def build_rag_index(file_path: str, session_id: str, model_id: str | None = None
         raise ValueError(
             f"No extractable text in {file_path} — the PDF may be scanned or image-only"
         )
-    index = VectorStoreIndex(nodes=nodes, vector_store=_vector_store())
+    # Core 0.14 dropped the vector_store= kwarg on VectorStoreIndex — the
+    # supported wiring is through storage_context. Passing vector_store=
+    # anyway is silently ignored and the index builds an in-memory store.
+    index = VectorStoreIndex(
+        nodes=nodes,
+        storage_context=StorageContext.from_defaults(vector_store=_vector_store()),
+    )
     rag_indexes.setdefault(session_id, {})[model_id] = (
         _retriever_for(index, session_id),
         _synthesizer_for(model_id),
