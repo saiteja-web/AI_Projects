@@ -45,12 +45,18 @@ export function MessageList({ messages }: MessageListProps) {
                             </p>
                         </div>
 
-                        {/* Show citations for AI messages */}
+                        {/* Show citations for AI messages (skip legacy int-shaped rows) */}
                         {message.role === 'ai' && message.sources.length > 0 && (
                             <div style={{ marginTop: '4px', display: 'flex', gap: '4px' }}>
-                                {message.sources.map((page) => (
-                                    <CitationBadge key={page} pageNumber={page} />
-                                ))}
+                                {message.sources
+                                    .filter((source) => typeof source?.page === 'number')
+                                    .map((source, i) => (
+                                        <CitationBadge
+                                            key={`${source.page}-${source.section}-${i}`}
+                                            page={source.page}
+                                            section={source.section}
+                                        />
+                                    ))}
                             </div>
                         )}
                     </div>

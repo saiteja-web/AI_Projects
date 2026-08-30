@@ -3,7 +3,7 @@ import { HomePage } from './components/HomePage';
 import { ChatPage } from './components/ChatPage';
 
 function App() {
-  const [route, setRoute] = useState<{ page: string; sessionId?: string }>({
+  const [route] = useState<{ page: string; sessionId?: string }>({
     page: window.location.pathname.startsWith("/chat/") ? "chat" : "home",
     sessionId: window.location.pathname.split("/chat/")[1],
   });

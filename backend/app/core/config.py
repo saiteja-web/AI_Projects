@@ -9,18 +9,30 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # These fields map 1:1 to keys in backend/.env
     database_url: str
-    embedding_model: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
     frontend_origin: str = "http://localhost:5173"
 
-    # Ollama LLM settings
-    ollama_base_url: str = "http://ollama:11434"
+    # Gemini API (https://aistudio.google.com/apikey)
+    gemini_api_key: str = ""
 
-    # OpenAI settings
-    openai_api_key: str = ""
+    # Default LLM model
+    default_llm_model: str = "gemini-3.6-flash"
 
-    # Default LLM provider and model
-    default_llm_provider: str = "ollama"  # Options: "ollama", "openai"
-    default_llm_model: str = "llama3.2"
+    # ── LlamaIndex RAG knobs ─────────────────────────────────
+    # Vector dimension of the embedding model (bge-small-en-v1.5 = 384)
+    embed_dim: int = 384
+    # Chunking: a chunk = N whole sentences within a section
+    sentences_per_chunk: int = 6
+    sentence_overlap: int = 1
+    # pgvector HNSW index tuning
+    hnsw_m: int = 16
+    hnsw_ef_construction: int = 64
+    hnsw_ef_search: int = 40
+
+    # ── LangSmith tracing (optional; OTLP via OpenLLMetry) ──
+    langsmith_api_key: str = ""
+    langsmith_project: str = "rag-doc-chat"
+    langsmith_tracing: bool = False
 
     # Tell pydantic-settings to read from backend/.env
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")

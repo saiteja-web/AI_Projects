@@ -37,7 +37,13 @@ async def test_history_returns_messages_in_order(db_session, client):
     async with db_session() as db:
         session = await db_service.create_session(db, "doc.pdf")
         await db_service.save_message(db, str(session.id), "user", "What is RAG?", [])
-        await db_service.save_message(db, str(session.id), "ai", "RAG is...", [1, 2])
+        await db_service.save_message(
+            db,
+            str(session.id),
+            "ai",
+            "RAG is...",
+            [{"page": 1, "section": "Introduction"}, {"page": 2, "section": "Skills"}],
+        )
 
     response = await client.get(f"/api/history/{session.id}")
     assert response.status_code == 200
@@ -46,7 +52,10 @@ async def test_history_returns_messages_in_order(db_session, client):
     assert messages[0]["role"] == "user"
     assert messages[0]["content"] == "What is RAG?"
     assert messages[1]["role"] == "ai"
-    assert messages[1]["sources"] == [1, 2]
+    assert messages[1]["sources"] == [
+        {"page": 1, "section": "Introduction"},
+        {"page": 2, "section": "Skills"},
+    ]
 
 
 @pytest.mark.asyncio

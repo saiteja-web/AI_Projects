@@ -1,9 +1,15 @@
+// this represents a single source citation attached to an AI message
+interface SourceRef {
+    page: number;
+    section: string;
+}
+
 // this represents a single message in the chat history
 interface Message{
     id:string;
     role:'user'|'ai';
     content:string;
-    sources:number[];
+    sources:SourceRef[];
     created_at:string;
 }
 
@@ -21,7 +27,7 @@ interface UploadResponse{
 // The response from POST /api/chat
 interface ChatResponse {
     answer: string;
-    sources: number[];
+    sources: SourceRef[];
     session_id: string;
 }
 
@@ -29,7 +35,6 @@ interface ChatResponse {
 interface ChatRequest {
     session_id: string;
     query: string;
-    provider?: string;
     model_id?: string;
 }
 
@@ -41,20 +46,10 @@ interface ModelInfo {
     description: string;
 }
 
-// Provider info with models
-interface ProviderInfo {
-    name: string;
-    models: ModelInfo[];
-}
-
 // Response from GET /models/
 interface ModelsResponse {
-    providers: {
-        ollama: ProviderInfo;
-        openai: ProviderInfo;
-    };
-    default_provider: string;
+    models: ModelInfo[];
     default_model: string;
 }
 
-export type { Message, ChatHistory, ChatResponse, UploadResponse, ChatRequest, ModelInfo, ProviderInfo, ModelsResponse };
+export type { Message, ChatHistory, ChatResponse, UploadResponse, ChatRequest, ModelInfo, ModelsResponse, SourceRef };

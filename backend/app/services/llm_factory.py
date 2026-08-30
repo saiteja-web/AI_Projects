@@ -1,18 +1,17 @@
-"""LLM factory and model registry.
+"""Gemini model registry and factory.
 
-Supports multiple LLM providers:
-- Ollama: Local models (llama3.2, mistral, codellama, etc.)
-- OpenAI: GPT-4, GPT-3.5-turbo, etc.
-
-The factory pattern allows dynamic LLM instantiation based on provider and model.
+Single provider (Google Gemini) with three selectable models. The frontend
+model picker is driven by AVAILABLE_MODELS via GET /models/.
 """
 from dataclasses import dataclass
-from typing import Any
 
-from langchain_openai import ChatOpenAI
-from langchain_ollama import ChatOllama
+from llama_index.llms.google_genai import GoogleGenAI
 
 from app.core.config import settings
+
+# Output token limit shared by the current Gemini models (what the API's
+# models.get metadata would report). Keeps construction free of network calls.
+GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
 
 @dataclass
@@ -20,70 +19,34 @@ class ModelInfo:
     """Metadata about an available LLM model."""
     id: str
     name: str
-    provider: str
     context_tokens: int | None = None
     description: str = ""
 
 
-# Available models registry
+# Available models registry.
+# gemini-2.5-* ids are rejected at invocation time for new API keys ("no
+# longer available to new users"), so the registry tracks the current family;
+# the -latest aliases are Google's stable pointers to the current pro/lite.
 AVAILABLE_MODELS: list[ModelInfo] = [
-    # Ollama (local) models
     ModelInfo(
-        id="llama3.2",
-        name="Llama 3.2",
-        provider="ollama",
-        context_tokens=128000,
-        description="Fast and capable local model"
+        id="gemini-3.6-flash",
+        name="Gemini 3.6 Flash",
+        context_tokens=1_048_576,
+        description="Fast and capable default model",
     ),
     ModelInfo(
-        id="mistral",
-        name="Mistral 7B",
-        provider="ollama",
-        context_tokens=32000,
-        description="Balanced performance and speed"
+        id="gemini-pro-latest",
+        name="Gemini Pro (latest)",
+        context_tokens=1_048_576,
+        description="Higher quality for complex questions",
     ),
     ModelInfo(
-        id="codellama",
-        name="Code Llama",
-        provider="ollama",
-        context_tokens=100000,
-        description="Specialized for code generation"
-    ),
-    ModelInfo(
-        id="qwen2.5",
-        name="Qwen 2.5",
-        provider="ollama",
-        context_tokens=32768,
-        description="Strong reasoning capabilities"
-    ),
-    # OpenAI models
-    ModelInfo(
-        id="gpt-4o",
-        name="GPT-4o",
-        provider="openai",
-        context_tokens=128000,
-        description="OpenAI's fastest flagship model"
-    ),
-    ModelInfo(
-        id="gpt-4o-mini",
-        name="GPT-4o Mini",
-        provider="openai",
-        context_tokens=128000,
-        description="Affordable and fast"
-    ),
-    ModelInfo(
-        id="gpt-4-turbo",
-        name="GPT-4 Turbo",
-        provider="openai",
-        context_tokens=128000,
-        description="Advanced reasoning"
+        id="gemini-flash-lite-latest",
+        name="Gemini Flash-Lite (latest)",
+        context_tokens=1_048_576,
+        description="Fastest and cheapest",
     ),
 ]
-
-
-def get_models_for_provider(provider: str) -> list[ModelInfo]:
-    """Get all available models for a specific provider."""
-    return [m for m in AVAILABLE_MODELS if m.provider == provider]
 
 
 def get_model_by_id(model_id: str) -> ModelInfo | None:
@@ -94,38 +57,36 @@ def get_model_by_id(model_id: str) -> ModelInfo | None:
     return None
 
 
-def create_llm(provider: str, model_id: str, temperature: float = 0.3) -> Any:
-    """Factory function to create an LLM instance.
+def create_llm(model_id: str, temperature: float = 0.3) -> GoogleGenAI:
+    """Create a Gemini chat model instance.
 
     Args:
-        provider: The LLM provider ("ollama" or "openai")
-        model_id: The model identifier
+        model_id: Model identifier (must be in AVAILABLE_MODELS)
         temperature: Sampling temperature (0.0 to 1.0)
 
-    Returns:
-        A LangChain Chat model instance
-
     Raises:
-        ValueError: If provider is unknown or credentials are missing
+        ValueError: If model_id is unknown or GEMINI_API_KEY is not configured
     """
-    if provider == "ollama":
-        return ChatOllama(
-            base_url=settings.ollama_base_url,
-            model=model_id,
-            temperature=temperature,
+    info = get_model_by_id(model_id)
+    if info is None:
+        raise ValueError(
+            f"Unknown model: {model_id}. Available: {[m.id for m in AVAILABLE_MODELS]}"
         )
-    elif provider == "openai":
-        if not settings.openai_api_key:
-            raise ValueError("OpenAI API key not configured. Set OPENAI_API_KEY in .env")
-        return ChatOpenAI(
-            model=model_id,
-            temperature=temperature,
-            api_key=settings.openai_api_key,
-        )
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    if not settings.gemini_api_key:
+        raise ValueError("Gemini API key not configured. Set GEMINI_API_KEY in .env")
+    # Passing both max_tokens and context_window keeps the constructor offline:
+    # otherwise GoogleGenAI eagerly calls client.models.get() over the network,
+    # which breaks unit tests and adds a startup API dependency. These match the
+    # current Gemini family limits the API would return from that metadata call.
+    return GoogleGenAI(
+        model=model_id,
+        temperature=temperature,
+        api_key=settings.gemini_api_key,
+        context_window=info.context_tokens,
+        max_tokens=GEMINI_MAX_OUTPUT_TOKENS,
+    )
 
 
-def get_default_model() -> tuple[str, str]:
-    """Get the default provider and model from settings."""
-    return settings.default_llm_provider, settings.default_llm_model
+def get_default_model() -> str:
+    """Get the default model id from settings."""
+    return settings.default_llm_model

@@ -1,175 +1,199 @@
-"""LangChain RAG pipeline — the heart of the project.
-
-Uses the modern LangChain 1.x LCEL (LangChain Expression Language) pattern:
-runnables are composed with the pipe operator | instead of the deprecated
-RetrievalQA black box.
+"""LlamaIndex RAG pipeline — the heart of the project.
 
 Two stages:
-  INDEXING : PDF -> chunks -> embeddings -> ChromaDB  (build_rag_chain)
-  QUERYING : question -> embed -> top-k chunks -> LLM -> answer (query_rag_chain)
+  INDEXING : PDF -> section/sentence nodes -> fastembed vectors -> pgvector (HNSW)
+             (node_parser.parse_pdf_to_nodes + VectorStoreIndex)
+  QUERYING : question -> embed -> top-k session-filtered nodes -> Gemini -> answer
+             (retriever + response synthesizer; one retrieval feeds both the
+             empty-session guard and synthesis)
 
-Supports multiple LLM providers via llm_factory:
-- Ollama: Local models (llama3.2, mistral, codellama, etc.)
-- OpenAI: GPT-4, GPT-3.5-turbo, etc.
+Single LLM provider (Gemini); the model is selectable per query.
 """
 import os
 from typing import Any
 
-from langchain_chroma import Chroma
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import PromptTemplate
-from langchain_core.runnables import RunnablePassthrough
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from sqlalchemy.engine import make_url
+from llama_index.core import Settings as LlamaSettings
+from llama_index.core import VectorStoreIndex
+from llama_index.core.prompts import PromptTemplate
+from llama_index.core.response_synthesizers import get_response_synthesizer
+from llama_index.core.storage.storage_context import StorageContext
+from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
+from llama_index.vector_stores.postgres import PGVectorStore
 
 from app.core.config import settings
+from app.services.embeddings import FastEmbedEmbedding
 from app.services.llm_factory import create_llm, get_default_model
-
-# Where ChromaDB persists its vector index (mounted volume in docker-compose)
-CHROMA_DIR = os.environ.get("CHROMA_DIR", "/app/chroma_db")
-
-# In-memory registry of active retrieval chains, keyed by session_id.
-# Each entry is a dict mapping (provider, model_id) -> (chain, retriever)
-rag_chains: dict[str, dict[tuple[str, str], tuple[Any, Any]]] = {}
-
-def _llm(provider: str = "ollama", model_id: str = "llama3.2"):
-    """Create an LLM instance using the factory."""
-    return create_llm(provider, model_id, temperature=0.3)
-
-def _embeddings() -> HuggingFaceEmbeddings:
-    """The local embedding model (downloads ~80MB on first use, then cached)."""
-    return HuggingFaceEmbeddings(model_name=settings.embedding_model)
+from app.services.node_parser import parse_pdf_to_nodes
 
 
-def _build_chain(vectordb: Chroma, provider: str = "ollama", model_id: str = "llama3.2") -> Any:
-    """Build an LCEL retrieval chain over a Chroma vector store.
+class SessionNotIndexedError(LookupError):
+    """Raised when a session exists but no document was ever indexed for it."""
 
-    LCEL pipe composition:
-      {context, question} -> prompt -> llm -> string parser
 
-    Args:
-        vectordb: The Chroma vector store
-        provider: LLM provider ("ollama" or "openai")
-        model_id: Model identifier
+SIMILARITY_TOP_K = 10
+
+_QA_PROMPT = PromptTemplate(
+    "Answer the question using ONLY the context below. "
+    "If the answer is not in the context, say you don't know.\n\n"
+    "Context:\n{context_str}\n\n"
+    "Question: {query_str}\n\n"
+    "Answer:"
+)
+
+# In-memory cache of (retriever, synthesizer) per session and per model.
+rag_indexes: dict[str, dict[str, tuple[Any, Any]]] = {}
+
+# Singletons: FastEmbedEmbedding eagerly loads the ONNX session on every
+# construction (no cross-instance cache in fastembed) and PGVectorStore owns
+# a pair of SQLAlchemy engines — build each exactly once per process.
+_embed_model: FastEmbedEmbedding | None = None
+_vector_store_instance: PGVectorStore | None = None
+
+
+def _configure_llamaindex() -> None:
+    """Point LlamaIndex's global embed model at fastembed (idempotent).
+
+    The LLM is NOT set globally — it varies per query via the model picker,
+    so it is passed explicitly to the response synthesizer instead.
     """
-    retriever = vectordb.as_retriever(search_kwargs={"k": 3})
+    global _embed_model
+    if _embed_model is None:
+        _embed_model = FastEmbedEmbedding(model_name=settings.embedding_model)
+    LlamaSettings.embed_model = _embed_model
 
-    prompt = PromptTemplate.from_template(
-        "Answer the question using ONLY the context below. "
-        "If the answer is not in the context, say you don't know.\n\n"
-        "Context:\n{context}\n\n"
-        "Question: {question}\n\n"
-        "Answer:"
+
+def _build_vector_store() -> PGVectorStore:
+    """pgvector store in the app's Postgres: one shared table, HNSW index."""
+    url = make_url(settings.database_url)
+    return PGVectorStore.from_params(
+        database=url.database or "",
+        host=url.host or "localhost",
+        port=url.port or 5432,
+        user=url.username or "",
+        password=url.password or "",
+        table_name="rag_nodes",
+        embed_dim=settings.embed_dim,
+        hnsw_kwargs={
+            "hnsw_m": settings.hnsw_m,
+            "hnsw_ef_construction": settings.hnsw_ef_construction,
+            "hnsw_ef_search": settings.hnsw_ef_search,
+            "hnsw_dist_method": "vector_cosine_ops",
+        },
     )
 
-    def format_docs(docs):
-        return "\n\n".join(d.page_content for d in docs)
 
-    chain = (
-        {"context": retriever | format_docs, "question": RunnablePassthrough()}
-        | prompt
-        | _llm(provider, model_id)
-        | StrOutputParser()
+def _vector_store() -> PGVectorStore:
+    global _vector_store_instance
+    if _vector_store_instance is None:
+        _vector_store_instance = _build_vector_store()
+    return _vector_store_instance
+
+
+def _retriever_for(index: VectorStoreIndex, session_id: str):
+    """Top-k retriever scoped to one session via metadata filter."""
+    return index.as_retriever(
+        similarity_top_k=SIMILARITY_TOP_K,
+        filters=MetadataFilters(
+            filters=[ExactMatchFilter(key="session_id", value=session_id)]
+        ),
     )
-    return chain, retriever
 
 
-def build_rag_chain(
-    file_path: str,
-    session_id: str,
-    provider: str = "ollama",
-    model_id: str = "llama3.2"
-):
-    """INDEXING stage: load a PDF, chunk it, embed it, store in ChromaDB,
-    and build a retrieval chain ready to answer questions.
+def _synthesizer_for(model_id: str):
+    return get_response_synthesizer(
+        llm=create_llm(model_id, temperature=0.3),
+        text_qa_template=_QA_PROMPT,
+        response_mode="compact",
+    )
+
+
+def build_rag_index(file_path: str, session_id: str, model_id: str | None = None):
+    """INDEXING stage: parse the PDF into section/sentence nodes, embed them
+    into pgvector, and cache a (retriever, synthesizer) pair for the session.
 
     Args:
         file_path: Path to the PDF file
         session_id: Unique session identifier
-        provider: LLM provider ("ollama" or "openai")
-        model_id: Model identifier
+        model_id: LLM model (default model if None)
     """
-    # 1. Load PDF (one Document per page, with page metadata)
-    loader = PyPDFLoader(file_path)
-    pages = loader.load()
+    model_id = model_id or get_default_model()
+    _configure_llamaindex()
 
-    # 2. Chunk with overlap so split sentences stay in context
-    splitter = RecursiveCharacterTextSplitter(chunk_size=500, chunk_overlap=50)
-    chunks = splitter.split_documents(pages)
-
-    # 3+4. Embed each chunk and persist to a per-session Chroma collection
-    collection_name = f"session_{session_id.replace('-', '_')}"
-    vectordb = Chroma.from_documents(
-        documents=chunks,
-        embedding=_embeddings(),
-        collection_name=collection_name,
-        persist_directory=CHROMA_DIR,
+    nodes = parse_pdf_to_nodes(file_path, session_id)
+    if not nodes:
+        raise ValueError(
+            f"No extractable text in {file_path} — the PDF may be scanned or image-only"
+        )
+    # Core 0.14 dropped the vector_store= kwarg on VectorStoreIndex — the
+    # supported wiring is through storage_context. Passing vector_store=
+    # anyway is silently ignored and the index builds an in-memory store.
+    index = VectorStoreIndex(
+        nodes=nodes,
+        storage_context=StorageContext.from_defaults(vector_store=_vector_store()),
     )
-
-    # 5. Build the LCEL retrieval chain + keep the retriever for citations
-    chain, retriever = _build_chain(vectordb, provider, model_id)
-
-    # Store in the nested structure
-    if session_id not in rag_chains:
-        rag_chains[session_id] = {}
-    rag_chains[session_id][(provider, model_id)] = (chain, retriever)
-    return chain
+    rag_indexes.setdefault(session_id, {})[model_id] = (
+        _retriever_for(index, session_id),
+        _synthesizer_for(model_id),
+    )
+    return rag_indexes[session_id][model_id]
 
 
-def query_rag_chain(
+def query_rag(
     session_id: str,
     query: str,
-    provider: str | None = None,
-    model_id: str | None = None
+    model_id: str | None = None,
 ) -> dict[str, Any]:
     """QUERYING stage: answer a question using the session's document.
 
     Args:
         session_id: Unique session identifier
         query: The user's question
-        provider: LLM provider (uses default if None)
-        model_id: Model identifier (uses default if None)
+        model_id: LLM model (uses default if None)
 
-    Returns {"answer": str, "sources": [page numbers]}.
+    Returns {"answer": str, "sources": [{"page": int, "section": str}]}.
     """
-    # Use defaults if not specified
-    if provider is None or model_id is None:
-        provider, model_id = get_default_model()
+    model_id = model_id or get_default_model()
+    _configure_llamaindex()
 
-    # Check if we have a cached chain for this specific (provider, model_id) combination
-    session_chains = rag_chains.get(session_id, {})
-    cached = session_chains.get((provider, model_id))
-
+    cached = rag_indexes.get(session_id, {}).get(model_id)
     if cached is None:
-        # Reload from persisted Chroma collection (survives restarts)
-        collection_name = f"session_{session_id.replace('-', '_')}"
-        vectordb = Chroma(
-            collection_name=collection_name,
-            embedding_function=_embeddings(),
-            persist_directory=CHROMA_DIR,
+        # Reload from persisted pgvector (survives restarts). The embed model
+        # comes from the global LlamaSettings that _configure_llamaindex above
+        # points at fastembed — reading Settings.embed_model explicitly would
+        # lazily resolve an OpenAI default we deliberately don't ship.
+        index = VectorStoreIndex.from_vector_store(_vector_store())
+        cached = (_retriever_for(index, session_id), _synthesizer_for(model_id))
+        rag_indexes.setdefault(session_id, {})[model_id] = cached
+    retriever, synthesizer = cached
+
+    # 1. Retrieve top-k nodes for this session (the empty check doubles as
+    #    the SessionNotIndexedError guard before any LLM call is spent).
+    #    Safe conflation of "not indexed" with "no hits": the pgvector query
+    #    is a plain WHERE + LIMIT top-k with no similarity threshold, so an
+    #    indexed session ALWAYS returns >= 1 node. Adding a score cutoff
+    #    later would turn weak matches into 404s — keep that in mind.
+    nodes = retriever.retrieve(query)
+    if not nodes:
+        raise SessionNotIndexedError(
+            f"No document indexed for session {session_id}"
         )
-        chain, retriever = _build_chain(vectordb, provider, model_id)
 
-        # Cache it for future use
-        if session_id not in rag_chains:
-            rag_chains[session_id] = {}
-        rag_chains[session_id][(provider, model_id)] = (chain, retriever)
-    else:
-        chain, retriever = cached
+    # 2. Answer from exactly the retrieved nodes
+    response = synthesizer.synthesize(query, nodes=nodes)
 
-    # 1. Get the answer from the LLM
-    answer = chain.invoke(query)
+    # 3. Citations from the nodes actually used (deduped, order-preserving).
+    #    NodeWithScore proxies `.metadata` through to its wrapped TextNode.
+    sources: list[dict[str, Any]] = []
+    for node in nodes:
+        source = {
+            "page": int(node.metadata.get("page", 0)),
+            "section": str(node.metadata.get("section", "unknown")),
+        }
+        if source not in sources:
+            sources.append(source)
 
-    # 2. Separately fetch the source docs to extract page numbers for citations
-    source_docs = retriever.invoke(query)
-    source_pages: list[int] = []
-    for doc in source_docs:
-        page = doc.metadata.get("page")
-        if page is not None and page not in source_pages:
-            source_pages.append(int(page))
-
-    return {"answer": str(answer).strip(), "sources": source_pages}
+    return {"answer": str(response.response or "").strip(), "sources": sources}
 
 
 def save_uploaded_pdf(upload_file, session_id: str) -> str:

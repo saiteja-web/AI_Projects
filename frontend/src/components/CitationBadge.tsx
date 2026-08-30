@@ -1,8 +1,9 @@
 interface CitationBadgeProps {
-    pageNumber: number;
+    page: number;
+    section: string;
 }
 
-export function CitationBadge({ pageNumber }: CitationBadgeProps) {
+export function CitationBadge({ page, section }: CitationBadgeProps) {
     return (
         <span
             style={{
@@ -15,9 +16,9 @@ export function CitationBadge({ pageNumber }: CitationBadgeProps) {
                 borderRadius: '4px',
                 border: '1px solid #c7d2fe',
             }}
-            title={`Source page ${pageNumber}`}
+            title={`Source: ${section}, page ${page}`}
         >
-            p.{pageNumber}
+            p.{page} · {section}
         </span>
     );
 }

@@ -5,11 +5,13 @@ document, persists both the user question and the AI answer, and returns
 the answer with source page citations.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.concurrency import run_in_threadpool
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import get_db
 from app.models.schemas import ChatRequest, ChatResponse
 from app.services import db_service, rag_service
+from app.services.rag_service import SessionNotIndexedError
 
 router = APIRouter(prefix="/api", tags=["chat"])
 
@@ -32,14 +34,21 @@ async def chat(
             detail=f"Session {request.session_id} not found",
         )
 
-    # 2. Run the RAG query (retrieves chunks + asks the LLM)
+    # 2. Run the RAG query (retrieves chunks + asks the LLM). The sync
+    #    LlamaIndex/Gemini calls run in the threadpool: they expect a thread
+    #    with no running event loop, and this keeps the loop free meanwhile.
     try:
-        result = rag_service.query_rag_chain(
-            request.session_id,
+        result = await run_in_threadpool(
+            rag_service.query_rag,
+            str(request.session_id),
             request.query,
-            request.provider,
-            request.model_id
+            request.model_id,
         )
+    except SessionNotIndexedError as e:
+        # e.g. session exists but no document was ever indexed for it
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=str(e)
+        ) from e
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

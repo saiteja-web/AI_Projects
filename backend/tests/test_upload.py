@@ -12,7 +12,7 @@ import io
 
 import pytest
 
-# Minimal valid PDF bytes (a single blank page). Good enough to pass PyPDFLoader
+# Minimal valid PDF bytes (a single blank page). Good enough to pass pypdf
 # and prove the upload route end-to-end without shipping a binary fixture file.
 MINIMAL_PDF = b"""%PDF-1.4
 1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
@@ -61,5 +61,5 @@ async def test_upload_with_empty_filename_returns_422(client):
 
 
 # NOTE: A full valid-PDF-returns-session_id test is skipped here because it
-# triggers the real RAG build (embedding model download + ChromaDB writes).
+# triggers the real RAG build (embedding model download + pgvector writes).
 # That path is verified manually via Postman in the Phase 2 checklist.
