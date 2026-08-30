@@ -16,7 +16,7 @@ async def list_models():
     Returns:
         {
             "models": [{"id", "name", "context_tokens", "description"}, ...],
-            "default_model": "gemini-2.5-flash"
+            "default_model": "gemini-3.6-flash"
         }
     """
     return {

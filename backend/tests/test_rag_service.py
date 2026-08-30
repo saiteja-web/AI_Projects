@@ -62,7 +62,7 @@ def test_query_returns_answer_and_deduped_sources(monkeypatch):
     ]
     _patch_pipeline(monkeypatch, retrieved_nodes=nodes)
 
-    result = rag_service.query_rag("s1", "how much leave?", model_id="gemini-2.5-flash")
+    result = rag_service.query_rag("s1", "how much leave?", model_id="gemini-3.6-flash")
 
     assert result["answer"] == "42 days"
     assert result["sources"] == [
@@ -77,7 +77,7 @@ def test_build_rag_index_rejects_empty_parse(monkeypatch):
 
     with pytest.raises(ValueError, match="No extractable text"):
         rag_service.build_rag_index(
-            "f.pdf", "empty-parse-session", model_id="gemini-2.5-flash"
+            "f.pdf", "empty-parse-session", model_id="gemini-3.6-flash"
         )
 
 

@@ -77,7 +77,7 @@ def create_llm(model_id: str, temperature: float = 0.3) -> GoogleGenAI:
     # Passing both max_tokens and context_window keeps the constructor offline:
     # otherwise GoogleGenAI eagerly calls client.models.get() over the network,
     # which breaks unit tests and adds a startup API dependency. These match the
-    # gemini-2.5 family limits the API would return from that metadata call.
+    # current Gemini family limits the API would return from that metadata call.
     return GoogleGenAI(
         model=model_id,
         temperature=temperature,
