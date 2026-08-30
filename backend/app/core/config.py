@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     gemini_api_key: str = ""
 
     # Default LLM model
-    default_llm_model: str = "gemini-2.5-flash"
+    default_llm_model: str = "gemini-3.6-flash"
 
     # ── LlamaIndex RAG knobs ─────────────────────────────────
     # Vector dimension of the embedding model (bge-small-en-v1.5 = 384)

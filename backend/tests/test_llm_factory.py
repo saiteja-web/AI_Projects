@@ -7,7 +7,11 @@ from app.services import llm_factory
 
 def test_available_models_are_gemini_only():
     ids = [m.id for m in llm_factory.AVAILABLE_MODELS]
-    assert ids == ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"]
+    assert ids == [
+        "gemini-3.6-flash",
+        "gemini-pro-latest",
+        "gemini-flash-lite-latest",
+    ]
 
 
 def test_model_info_has_no_provider_field():
@@ -22,9 +26,9 @@ def test_get_default_model_returns_model_string():
 
 def test_create_llm_builds_gemini_model(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
-    llm = llm_factory.create_llm("gemini-2.5-flash", temperature=0.3)
+    llm = llm_factory.create_llm("gemini-3.6-flash", temperature=0.3)
     # llama-index-llms-google-genai stores the model id verbatim on .model
-    assert llm.model == "gemini-2.5-flash"
+    assert llm.model == "gemini-3.6-flash"
     assert llm.temperature == 0.3
 
 
@@ -34,12 +38,12 @@ def test_create_llm_rejects_unknown_model():
 
 
 def test_get_model_by_id_finds_gemini():
-    model = llm_factory.get_model_by_id("gemini-2.5-pro")
+    model = llm_factory.get_model_by_id("gemini-pro-latest")
     assert model is not None
-    assert model.name == "Gemini 2.5 Pro"
+    assert model.name == "Gemini Pro (latest)"
 
 
 def test_create_llm_requires_api_key(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "")
     with pytest.raises(ValueError, match="GEMINI_API_KEY"):
-        llm_factory.create_llm("gemini-2.5-flash", temperature=0.3)
+        llm_factory.create_llm("gemini-3.6-flash", temperature=0.3)

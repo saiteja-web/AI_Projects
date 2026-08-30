@@ -9,7 +9,7 @@ from llama_index.llms.google_genai import GoogleGenAI
 
 from app.core.config import settings
 
-# Output token limit shared by the gemini-2.5 models (what the API's
+# Output token limit shared by the current Gemini models (what the API's
 # models.get metadata would report). Keeps construction free of network calls.
 GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
@@ -23,23 +23,26 @@ class ModelInfo:
     description: str = ""
 
 
-# Available models registry
+# Available models registry.
+# gemini-2.5-* ids are rejected at invocation time for new API keys ("no
+# longer available to new users"), so the registry tracks the current family;
+# the -latest aliases are Google's stable pointers to the current pro/lite.
 AVAILABLE_MODELS: list[ModelInfo] = [
     ModelInfo(
-        id="gemini-2.5-flash",
-        name="Gemini 2.5 Flash",
+        id="gemini-3.6-flash",
+        name="Gemini 3.6 Flash",
         context_tokens=1_048_576,
         description="Fast and capable default model",
     ),
     ModelInfo(
-        id="gemini-2.5-pro",
-        name="Gemini 2.5 Pro",
+        id="gemini-pro-latest",
+        name="Gemini Pro (latest)",
         context_tokens=1_048_576,
         description="Higher quality for complex questions",
     ),
     ModelInfo(
-        id="gemini-2.5-flash-lite",
-        name="Gemini 2.5 Flash-Lite",
+        id="gemini-flash-lite-latest",
+        name="Gemini Flash-Lite (latest)",
         context_tokens=1_048_576,
         description="Fastest and cheapest",
     ),
