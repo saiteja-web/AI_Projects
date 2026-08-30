@@ -40,7 +40,7 @@ class UploadResponse(BaseModel):
 
 # ── Chat endpoint request/response (used in Phase 3) ──────────
 class ChatRequest(BaseModel):
-    session_id: str
+    session_id: UUID
     query: str = Field(min_length=1)  # empty string → 422
     model_id: str | None = None  # Model identifier
 
@@ -48,4 +48,4 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     answer: str
     sources: list[dict]
-    session_id: str
+    session_id: UUID

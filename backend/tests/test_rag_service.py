@@ -30,6 +30,7 @@ class _FakeNode:
 
 def _patch_pipeline(monkeypatch, retrieved_nodes):
     """Stub everything between rag_service and the outside world."""
+    rag_service.rag_indexes.clear()
     monkeypatch.setattr(rag_service, "_configure_llamaindex", lambda: None)
     monkeypatch.setattr(rag_service, "_vector_store", lambda: object())
     monkeypatch.setattr(
@@ -68,3 +69,37 @@ def test_query_returns_answer_and_deduped_sources(monkeypatch):
         {"page": 1, "section": "EXPERIENCE"},
         {"page": 2, "section": "SKILLS"},
     ]
+
+
+def test_build_rag_index_rejects_empty_parse(monkeypatch):
+    _patch_pipeline(monkeypatch, retrieved_nodes=[])
+    monkeypatch.setattr(rag_service, "parse_pdf_to_nodes", lambda p, s: [])
+
+    with pytest.raises(ValueError, match="No extractable text"):
+        rag_service.build_rag_index(
+            "f.pdf", "empty-parse-session", model_id="gemini-2.5-flash"
+        )
+
+
+def test_build_then_query_hits_cache_without_rebuild(monkeypatch):
+    builds = {"count": 0}
+
+    class _CountingIndex:
+        def __init__(self, nodes, vector_store=None, **kwargs):
+            builds["count"] += 1
+
+        def as_retriever(self, **kwargs):
+            return _FakeRetriever([_FakeNode(1, "SKILLS")])
+
+    _patch_pipeline(monkeypatch, retrieved_nodes=[_FakeNode(1, "SKILLS")])
+    monkeypatch.setattr(rag_service, "VectorStoreIndex", _CountingIndex)
+    monkeypatch.setattr(
+        rag_service, "parse_pdf_to_nodes", lambda p, s: [_FakeNode(1, "SKILLS")]
+    )
+
+    rag_service.build_rag_index("f.pdf", "s1", model_id="m1")
+    result = rag_service.query_rag("s1", "any question", model_id="m1")
+
+    assert builds["count"] == 1  # cache hit: no index rebuild
+    assert result["answer"] == "42 days"
+    assert result["sources"] == [{"page": 1, "section": "SKILLS"}]

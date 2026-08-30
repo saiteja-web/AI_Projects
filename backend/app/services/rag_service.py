@@ -43,6 +43,12 @@ _QA_PROMPT = PromptTemplate(
 # In-memory cache of (retriever, synthesizer) per session and per model.
 rag_indexes: dict[str, dict[str, tuple[Any, Any]]] = {}
 
+# Singletons: FastEmbedEmbedding eagerly loads the ONNX session on every
+# construction (no cross-instance cache in fastembed) and PGVectorStore owns
+# a pair of SQLAlchemy engines — build each exactly once per process.
+_embed_model: FastEmbedEmbedding | None = None
+_vector_store_instance: PGVectorStore | None = None
+
 
 def _configure_llamaindex() -> None:
     """Point LlamaIndex's global embed model at fastembed (idempotent).
@@ -50,10 +56,13 @@ def _configure_llamaindex() -> None:
     The LLM is NOT set globally — it varies per query via the model picker,
     so it is passed explicitly to the response synthesizer instead.
     """
-    LlamaSettings.embed_model = FastEmbedEmbedding(model_name=settings.embedding_model)
+    global _embed_model
+    if _embed_model is None:
+        _embed_model = FastEmbedEmbedding(model_name=settings.embedding_model)
+    LlamaSettings.embed_model = _embed_model
 
 
-def _vector_store() -> PGVectorStore:
+def _build_vector_store() -> PGVectorStore:
     """pgvector store in the app's Postgres: one shared table, HNSW index."""
     url = make_url(settings.database_url)
     return PGVectorStore.from_params(
@@ -71,6 +80,13 @@ def _vector_store() -> PGVectorStore:
             "hnsw_dist_method": "vector_cosine_ops",
         },
     )
+
+
+def _vector_store() -> PGVectorStore:
+    global _vector_store_instance
+    if _vector_store_instance is None:
+        _vector_store_instance = _build_vector_store()
+    return _vector_store_instance
 
 
 def _retriever_for(index: VectorStoreIndex, session_id: str):
@@ -104,6 +120,10 @@ def build_rag_index(file_path: str, session_id: str, model_id: str | None = None
     _configure_llamaindex()
 
     nodes = parse_pdf_to_nodes(file_path, session_id)
+    if not nodes:
+        raise ValueError(
+            f"No extractable text in {file_path} — the PDF may be scanned or image-only"
+        )
     index = VectorStoreIndex(nodes=nodes, vector_store=_vector_store())
     rag_indexes.setdefault(session_id, {})[model_id] = (
         _retriever_for(index, session_id),
@@ -141,7 +161,11 @@ def query_rag(
     retriever, synthesizer = cached
 
     # 1. Retrieve top-k nodes for this session (the empty check doubles as
-    #    the SessionNotIndexedError guard before any LLM call is spent)
+    #    the SessionNotIndexedError guard before any LLM call is spent).
+    #    Safe conflation of "not indexed" with "no hits": the pgvector query
+    #    is a plain WHERE + LIMIT top-k with no similarity threshold, so an
+    #    indexed session ALWAYS returns >= 1 node. Adding a score cutoff
+    #    later would turn weak matches into 404s — keep that in mind.
     nodes = retriever.retrieve(query)
     if not nodes:
         raise SessionNotIndexedError(
