@@ -23,8 +23,9 @@ def test_get_default_model_returns_model_string():
 def test_create_llm_builds_gemini_model(monkeypatch):
     monkeypatch.setattr(settings, "gemini_api_key", "test-key")
     llm = llm_factory.create_llm("gemini-2.5-flash", temperature=0.3)
-    # langchain-google-genai 3.2.0 stores the model as "models/<id>" on .model
-    assert llm.model.endswith("gemini-2.5-flash")
+    # llama-index-llms-google-genai stores the model id verbatim on .model
+    assert llm.model == "gemini-2.5-flash"
+    assert llm.temperature == 0.3
 
 
 def test_create_llm_rejects_unknown_model():

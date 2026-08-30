@@ -5,9 +5,13 @@ model picker is driven by AVAILABLE_MODELS via GET /models/.
 """
 from dataclasses import dataclass
 
-from langchain_google_genai import ChatGoogleGenerativeAI
+from llama_index.llms.google_genai import GoogleGenAI
 
 from app.core.config import settings
+
+# Output token limit shared by the gemini-2.5 models (what the API's
+# models.get metadata would report). Keeps construction free of network calls.
+GEMINI_MAX_OUTPUT_TOKENS = 65_536
 
 
 @dataclass
@@ -50,7 +54,7 @@ def get_model_by_id(model_id: str) -> ModelInfo | None:
     return None
 
 
-def create_llm(model_id: str, temperature: float = 0.3) -> ChatGoogleGenerativeAI:
+def create_llm(model_id: str, temperature: float = 0.3) -> GoogleGenAI:
     """Create a Gemini chat model instance.
 
     Args:
@@ -60,16 +64,23 @@ def create_llm(model_id: str, temperature: float = 0.3) -> ChatGoogleGenerativeA
     Raises:
         ValueError: If model_id is unknown or GEMINI_API_KEY is not configured
     """
-    if get_model_by_id(model_id) is None:
+    info = get_model_by_id(model_id)
+    if info is None:
         raise ValueError(
             f"Unknown model: {model_id}. Available: {[m.id for m in AVAILABLE_MODELS]}"
         )
     if not settings.gemini_api_key:
         raise ValueError("Gemini API key not configured. Set GEMINI_API_KEY in .env")
-    return ChatGoogleGenerativeAI(
+    # Passing both max_tokens and context_window keeps the constructor offline:
+    # otherwise GoogleGenAI eagerly calls client.models.get() over the network,
+    # which breaks unit tests and adds a startup API dependency. These match the
+    # gemini-2.5 family limits the API would return from that metadata call.
+    return GoogleGenAI(
         model=model_id,
         temperature=temperature,
-        google_api_key=settings.gemini_api_key,
+        api_key=settings.gemini_api_key,
+        context_window=info.context_tokens,
+        max_tokens=GEMINI_MAX_OUTPUT_TOKENS,
     )
 
 
