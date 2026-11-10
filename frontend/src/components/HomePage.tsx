@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { uploadPDF } from '../services/api';
 import type { UploadResponse } from '../types';
-
+import {Link} from 'react-router-dom'
 export function HomePage() {
     const [file, setFile] = useState<File | null>(null);
     const [uploadResult, setUploadResult] = useState<UploadResponse | null>(null);
@@ -118,8 +118,8 @@ export function HomePage() {
                     <p>
                         Filename: <strong>{uploadResult.filename}</strong>
                     </p>
-                    <a
-                        href={`/chat/${uploadResult.session_id}`}
+                    <Link
+                        to={`/chat/${uploadResult.session_id}`}
                         style={{
                             display: 'inline-block',
                             marginTop: '1rem',
@@ -131,7 +131,7 @@ export function HomePage() {
                         }}
                     >
                         Start Chat →
-                    </a>
+                    </Link>
                 </div>
             )}
         </div>

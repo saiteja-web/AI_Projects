@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { MessageList } from './MessageList';
 import { getChatHistory, sendChatMessage, fetchModels } from '../services/api';
 import type { Message, ModelsResponse } from '../types';
+import { useNavigate } from 'react-router-dom';
 
 interface ChatPageProps {
     sessionId: string;
@@ -14,6 +15,7 @@ export function ChatPage({ sessionId }: ChatPageProps) {
     const [error, setError] = useState<string | null>(null);
     const [models, setModels] = useState<ModelsResponse | null>(null);
     const [selectedModel, setSelectedModel] = useState<string>('gemini-2.5-flash');
+    const navigate = useNavigate();
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     // Load available models on mount
@@ -38,7 +40,9 @@ export function ChatPage({ sessionId }: ChatPageProps) {
                 setMessages(history.messages);
             } catch (err) {
                 setError(err instanceof Error ? err.message : 'Failed to load history');
-            }
+                 //how to Redirect to 404 page on error
+                 navigate('/404');
+                }
         };
         loadHistory();
     }, [sessionId]);
